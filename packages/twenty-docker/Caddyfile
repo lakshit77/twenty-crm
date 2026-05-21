@@ -1,3 +1,0 @@
-crm.lakshitukani.com {
-	reverse_proxy server:3000
-}

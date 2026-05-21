@@ -1,29 +1,29 @@
-# Production: Caddy (HTTPS) + Twenty from GHCR + Redis
-# Usage on VPS: docker compose -f docker-compose.prod.yml up -d
-# Requires .env (see .env.production.example)
+# Production: Twenty from GHCR + Redis, routed by existing Traefik on the VPS.
+# Hostinger n8n template already runs Traefik on ports 80/443 — do not add Caddy.
+# Usage: docker compose -f docker-compose.prod.yml up -d
 
-name: twenty
+name: twenty-crm
+
+# Must share Traefik's network (Hostinger n8n stack: root_default) or routing 504s.
+networks:
+  root_default:
+    external: true
 
 services:
-  caddy:
-    image: caddy:2-alpine
-    restart: always
-    ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      server:
-        condition: service_healthy
-
   server:
     image: ghcr.io/lakshit77/twenty-crm:${TAG:-latest}
+    networks:
+      - default
+      - root_default
     expose:
       - '3000'
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.twenty-crm.rule=Host(`crm.lakshitukani.com`)
+      - traefik.http.routers.twenty-crm.tls=true
+      - traefik.http.routers.twenty-crm.entrypoints=web,websecure
+      - traefik.http.routers.twenty-crm.tls.certresolver=mytlschallenge
+      - traefik.http.services.twenty-crm.loadbalancer.server.port=3000
     volumes:
       - server-local-data:/app/packages/twenty-server/.local-storage
     environment:
@@ -101,5 +101,3 @@ services:
 
 volumes:
   server-local-data:
-  caddy_data:
-  caddy_config:
