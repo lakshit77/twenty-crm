@@ -9,7 +9,8 @@ services:
       - "3000:3000"
     environment:
       NODE_PORT: 3000
-      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-postgres}:${PG_DATABASE_PASSWORD:-postgres}@${PG_DATABASE_HOST:-db}:${PG_DATABASE_PORT:-5432}/default
+      PG_DATABASE_URL: ${PG_DATABASE_URL}
+      PG_SSL_ALLOW_SELF_SIGNED: ${PG_SSL_ALLOW_SELF_SIGNED:-false}
       SERVER_URL: ${SERVER_URL}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       DISABLE_DB_MIGRATIONS: ${DISABLE_DB_MIGRATIONS}
@@ -19,6 +20,11 @@ services:
       STORAGE_S3_REGION: ${STORAGE_S3_REGION}
       STORAGE_S3_NAME: ${STORAGE_S3_NAME}
       STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
+      STORAGE_S3_ACCESS_KEY_ID: ${STORAGE_S3_ACCESS_KEY_ID}
+      STORAGE_S3_SECRET_ACCESS_KEY: ${STORAGE_S3_SECRET_ACCESS_KEY}
+      STORAGE_S3_PRESIGNED_URL_ENABLED: ${STORAGE_S3_PRESIGNED_URL_ENABLED}
+      STORAGE_S3_PRESIGNED_URL_EXPIRES_IN: ${STORAGE_S3_PRESIGNED_URL_EXPIRES_IN}
+      IS_CONFIG_VARIABLES_IN_DB_ENABLED: ${IS_CONFIG_VARIABLES_IN_DB_ENABLED}
 
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY}
@@ -47,8 +53,6 @@ services:
       # EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
 
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -64,7 +68,8 @@ services:
       - server-local-data:/app/packages/twenty-server/.local-storage
     command: ["yarn", "worker:prod"]
     environment:
-      PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-postgres}:${PG_DATABASE_PASSWORD:-postgres}@${PG_DATABASE_HOST:-db}:${PG_DATABASE_PORT:-5432}/default
+      PG_DATABASE_URL: ${PG_DATABASE_URL}
+      PG_SSL_ALLOW_SELF_SIGNED: ${PG_SSL_ALLOW_SELF_SIGNED:-false}
       SERVER_URL: ${SERVER_URL}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       DISABLE_DB_MIGRATIONS: "true" # it already runs on the server
@@ -74,6 +79,11 @@ services:
       STORAGE_S3_REGION: ${STORAGE_S3_REGION}
       STORAGE_S3_NAME: ${STORAGE_S3_NAME}
       STORAGE_S3_ENDPOINT: ${STORAGE_S3_ENDPOINT}
+      STORAGE_S3_ACCESS_KEY_ID: ${STORAGE_S3_ACCESS_KEY_ID}
+      STORAGE_S3_SECRET_ACCESS_KEY: ${STORAGE_S3_SECRET_ACCESS_KEY}
+      STORAGE_S3_PRESIGNED_URL_ENABLED: ${STORAGE_S3_PRESIGNED_URL_ENABLED}
+      STORAGE_S3_PRESIGNED_URL_EXPIRES_IN: ${STORAGE_S3_PRESIGNED_URL_EXPIRES_IN}
+      IS_CONFIG_VARIABLES_IN_DB_ENABLED: ${IS_CONFIG_VARIABLES_IN_DB_ENABLED}
 
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY}
@@ -102,25 +112,8 @@ services:
       # EMAIL_SMTP_PASSWORD: ${EMAIL_SMTP_PASSWORD:-}
 
     depends_on:
-      db:
-        condition: service_healthy
       server:
         condition: service_healthy
-    restart: always
-
-  db:
-    image: postgres:16
-    volumes:
-      - db-data:/var/lib/postgresql/data
-    environment:
-      POSTGRES_DB: ${PG_DATABASE_NAME:-default}
-      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD:-postgres}
-      POSTGRES_USER: ${PG_DATABASE_USER:-postgres}
-    healthcheck:
-      test: pg_isready -U ${PG_DATABASE_USER:-postgres} -h localhost -d postgres
-      interval: 5s
-      timeout: 5s
-      retries: 10
     restart: always
 
   redis:
@@ -134,5 +127,4 @@ services:
       retries: 10
 
 volumes:
-  db-data:
   server-local-data:
