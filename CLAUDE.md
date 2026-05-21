@@ -217,6 +217,21 @@ This handles everything: starts Postgres + Redis (auto-detects local services vs
 
 **Note:** CI workflows (GitHub Actions) manage services via Actions service containers and run setup steps individually — they don't use this script.
 
+## Production VPS (crm.lakshitukani.com)
+
+**Mandatory — do not skip:**
+
+1. **Never SSH, `scp`, `docker compose`, or write to production Supabase** unless the user explicitly asks you to do so in that conversation.
+2. **Before any production change**, explain in plain language:
+   - what problem you found
+   - what you propose to run or change
+   - expected impact and rollback
+3. **Wait for explicit approval** (e.g. "yes, do it on the VPS") before executing.
+4. Prefer **UI steps** the user can run themselves (Admin Panel, Settings → AI) over remote automation.
+5. Do not read or print secrets from `~/twenty-crm/.env`, `AI_PROVIDERS`, or API keys in chat output.
+
+Deploy runbook: `packages/twenty-docker/DEPLOY.md` (read-only unless the user requests VPS work).
+
 ## Important Files
 - `nx.json` - Nx workspace configuration with task definitions
 - `tsconfig.base.json` - Base TypeScript configuration
