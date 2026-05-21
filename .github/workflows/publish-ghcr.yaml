@@ -1,0 +1,55 @@
+name: Publish Twenty image to GHCR
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packages/twenty-docker/**'
+      - 'packages/twenty-server/**'
+      - 'packages/twenty-front/**'
+      - 'packages/twenty-ui/**'
+      - 'packages/twenty-shared/**'
+      - 'packages/twenty-emails/**'
+      - 'package.json'
+      - 'yarn.lock'
+
+concurrency:
+  group: publish-ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e4dcac7cba516d0ee267544571d668b7a410958b # v3.10.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@e89055f9abe0628d0876624c307d63e75b9628b5 # v6.18.0
+        with:
+          context: .
+          file: packages/twenty-docker/twenty/Dockerfile
+          target: twenty
+          push: true
+          tags: |
+            ghcr.io/lakshit77/twenty-crm:latest
+            ghcr.io/lakshit77/twenty-crm:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
