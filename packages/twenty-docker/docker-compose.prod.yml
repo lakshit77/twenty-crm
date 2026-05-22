@@ -19,6 +19,9 @@ services:
       - '3000'
     labels:
       - traefik.enable=true
+      # Pin Traefik to root_default; without this, n8n/Traefik restarts can pick the
+      # internal twenty-crm_default IP and CRM returns 504 while the server is healthy.
+      - traefik.docker.network=root_default
       - traefik.http.routers.twenty-crm.rule=Host(`crm.lakshitukani.com`)
       - traefik.http.routers.twenty-crm.tls=true
       - traefik.http.routers.twenty-crm.entrypoints=web,websecure

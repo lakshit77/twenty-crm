@@ -323,6 +323,8 @@ Traefik runs as `root-traefik-1` from `/root/docker-compose.yml`. The Twenty `se
 
 **Docker network:** The `server` container must join **`root_default`** (the same network as `root-traefik-1` and `root-n8n-1`). `docker-compose.prod.yml` declares this as an external network. Without it, Traefik returns **504 Gateway Timeout** even when the server is healthy.
 
+**Multi-network pin (required):** The server also joins the internal `twenty-crm_default` network (Redis/worker). Traefik must use **`traefik.docker.network=root_default`** on the `server` labels so it always routes to the Traefik-facing IP. Without that label, an unrelated restart (e.g. n8n update) can make Traefik pick the internal IP — CRM **504s** while containers stay healthy. Updating n8n under `/root` should never require touching `~/twenty-crm`.
+
 If HTTPS fails shortly after DNS goes live:
 
 ```bash
@@ -411,7 +413,7 @@ ssh -i "$SSH_KEY" $VPS "docker stop traefik-jqir-traefik-1 && docker rm traefik-
 | `Permission denied (publickey)` | Add `.ssh/id_ed25519.pub` to Hostinger SSH keys; use correct `SSH_KEY` path |
 | Pull 401 / denied | GHCR package visibility or `docker login` on VPS |
 | Server unhealthy | `docker compose logs server` — Supabase URL, SSL flag, `ENCRYPTION_KEY` |
-| **504** on `https://crm...` | Server not on `root_default` — `docker network connect root_default twenty-crm-server-1` or redeploy current `docker-compose.prod.yml` |
+| **504** on `https://crm...` | (1) Server not on `root_default` — connect it or redeploy compose. (2) Server on two networks but Traefik uses wrong IP — ensure `traefik.docker.network=root_default` label, then `docker compose -f docker-compose.prod.yml up -d` and verify backend: `docker exec root-traefik-1 wget -qO- http://127.0.0.1:8080/api/http/services \| grep -A1 twenty-crm` shows `172.18.x.x`, not `172.20.x.x` |
 | HTTPS certificate error | DNS + `docker restart root-traefik-1` |
 | Port 80/443 bind error | Do not start Caddy; Traefik already uses those ports |
 | Upload 403 | R2 CORS for production origin |
