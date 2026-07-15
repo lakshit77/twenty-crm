@@ -19,6 +19,8 @@ export { CalendarChannelContactAutoCreationPolicy } from './CalendarChannelConta
 export { CalendarChannelSyncStage } from './CalendarChannelSyncStage';
 export { CalendarChannelSyncStatus } from './CalendarChannelSyncStatus';
 export { CalendarChannelVisibility } from './CalendarChannelVisibility';
+export type { CommandMenuConfirmationModalResult } from './CommandMenuConfirmationModalResult';
+export type { CommandMenuConfirmationModalResultBrowserEventDetail } from './CommandMenuConfirmationModalResultBrowserEventDetail';
 export type { CommandMenuContextApi } from './CommandMenuContextApi';
 export { CommandMenuItemViewType } from './CommandMenuItemViewType';
 export type { ActorMetadata } from './composite-types/actor.composite-type';
@@ -63,6 +65,7 @@ export { ContextStorePageType } from './ContextStorePageType';
 export { CoreObjectNameSingular } from './CoreObjectNameSingular';
 export { CrudOperationType } from './CrudOperationType';
 export type { EmailAttachment } from './EmailAttachment';
+export type { EmptyObject } from './EmptyObject.type';
 export type {
   SnackBarVariant,
   EnqueueSnackbarParams,
@@ -91,7 +94,11 @@ export type {
   FieldMetadataDefaultValueForAnyType,
   FieldMetadataDefaultValue,
 } from './FieldMetadataDefaultValue';
-export { fieldMetadataDefaultValueFunctionName } from './FieldMetadataDefaultValue';
+export {
+  fieldMetadataDefaultValueFunctionName,
+  FIELD_METADATA_TYPES_WITHOUT_DEFAULT_VALUE,
+  isFieldMetadataTypeWithDefaultValue,
+} from './FieldMetadataDefaultValue';
 export type { FieldMetadataMultiItemSettings } from './FieldMetadataMultiItemSettings';
 export { FieldMetadataSettingsOnClickAction } from './FieldMetadataMultiItemSettings';
 export type {
@@ -105,6 +112,7 @@ export {
 } from './FieldMetadataOptions';
 export type {
   FieldNumberVariant,
+  FieldCurrencyFormat,
   FieldMetadataSettingsMapping,
   AllFieldMetadataSettings,
   FieldMetadataSettings,
@@ -133,6 +141,11 @@ export type { IsGreaterOrEqual } from './IsGreaterOrEqual.type';
 export type { IsNever } from './IsNever.type';
 export type { IsSerializedRelation } from './IsSerializedRelation.type';
 export type { LogicFunctionEvent } from './LogicFunctionEvent';
+export type { LogicFunctionHttpResponse } from './LogicFunctionResponse';
+export {
+  LOGIC_FUNCTION_HTTP_RESPONSE_MARKER,
+  isLogicFunctionHttpResponse,
+} from './LogicFunctionResponse';
 export { MessageChannelContactAutoCreationPolicy } from './MessageChannelContactAutoCreationPolicy';
 export { MessageChannelPendingGroupEmailsAction } from './MessageChannelPendingGroupEmailsAction';
 export { MessageChannelSyncStage } from './MessageChannelSyncStage';
@@ -170,10 +183,11 @@ export type {
   ChartFilter,
   UniversalChartFilter,
 } from './page-layout/chart-filter.type';
+export type { GraphWidgetConfigurationType } from './page-layout/graph-widget-configuration-type';
+export { GRAPH_WIDGET_CONFIGURATION_TYPES } from './page-layout/graph-widget-configuration-type';
 export type { GridPosition } from './page-layout/grid-position.type';
 export type {
   AggregateChartConfiguration,
-  GaugeChartConfiguration,
   PieChartConfiguration,
   BarChartConfiguration,
   LineChartConfiguration,
@@ -205,6 +219,7 @@ export type {
 } from './page-layout/page-layout-widget-position.type';
 export type { PageLayoutWidgetUniversalConfiguration } from './page-layout/page-layout-widget-universal-configuration.type';
 export { PageLayoutTabLayoutMode } from './page-layout/PageLayoutTabLayoutMode';
+export { PageLayoutType } from './page-layout/PageLayoutType';
 export type { PageLayoutWidgetConditionalDisplay } from './page-layout/PageLayoutWidgetConditionalDisplay';
 export type { RatioAggregateConfig } from './page-layout/ratio-aggregate-config.type';
 export type { PartialFieldMetadataItem } from './PartialFieldMetadataItem';
@@ -269,6 +284,7 @@ export type {
 } from './RowLevelPermissionPredicateValue';
 export type { SerializedRelation } from './SerializedRelation.type';
 export { SERIALIZED_RELATION_BRAND } from './SerializedRelation.type';
+export { ServerFileFolder } from './ServerFileFolder';
 export { SettingsPath } from './SettingsPath';
 export { SidePanelPages } from './SidePanelPages';
 export type { Sources } from './SourcesType';
@@ -290,3 +306,5 @@ export { ViewOpenRecordIn } from './ViewOpenRecordIn';
 export { ViewSortDirection } from './ViewSortDirection';
 export { ViewType } from './ViewType';
 export { ViewVisibility } from './ViewVisibility';
+export { WebhookSubscriptionChannelType } from './WebhookSubscriptionChannelType';
+export { WebhookSubscriptionStatus } from './WebhookSubscriptionStatus';

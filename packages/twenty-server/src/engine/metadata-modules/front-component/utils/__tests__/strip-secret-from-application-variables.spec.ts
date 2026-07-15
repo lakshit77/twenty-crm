@@ -1,3 +1,6 @@
+import { FieldMetadataType } from 'twenty-shared/types';
+
+import { type EncryptedString } from 'src/engine/core-modules/secret-encryption/branded-strings/encrypted-string.type';
 import { type FlatApplicationVariable } from 'src/engine/metadata-modules/flat-application-variable/types/flat-application-variable.type';
 import { stripSecretFromApplicationVariables } from 'src/engine/metadata-modules/front-component/utils/strip-secret-from-application-variables';
 
@@ -6,9 +9,11 @@ const makeFlatVariable = (
 ): FlatApplicationVariable => ({
   id: '1',
   key: 'KEY',
-  value: 'value',
+  value: 'value' as EncryptedString,
   description: '',
   isSecret: false,
+  type: FieldMetadataType.TEXT,
+  options: null,
   applicationId: 'app-1',
   workspaceId: '00000000-0000-0000-0000-000000000000',
   universalIdentifier: '00000000-0000-0000-0000-000000000000',
@@ -25,8 +30,15 @@ describe('stripSecretFromApplicationVariables', () => {
 
   it('should include non-secret variables', () => {
     const variables = [
-      makeFlatVariable({ key: 'PUBLIC_URL', value: 'https://example.com' }),
-      makeFlatVariable({ id: '2', key: 'DEBUG', value: 'true' }),
+      makeFlatVariable({
+        key: 'PUBLIC_URL',
+        value: 'https://example.com' as EncryptedString,
+      }),
+      makeFlatVariable({
+        id: '2',
+        key: 'DEBUG',
+        value: 'true' as EncryptedString,
+      }),
     ];
 
     expect(stripSecretFromApplicationVariables(variables)).toEqual({
@@ -37,14 +49,21 @@ describe('stripSecretFromApplicationVariables', () => {
 
   it('should exclude secret variables', () => {
     const variables = [
-      makeFlatVariable({ key: 'PUBLIC_URL', value: 'https://example.com' }),
+      makeFlatVariable({
+        key: 'PUBLIC_URL',
+        value: 'https://example.com' as EncryptedString,
+      }),
       makeFlatVariable({
         id: '2',
         key: 'API_SECRET',
-        value: 'encrypted_secret',
+        value: 'encrypted_secret' as EncryptedString,
         isSecret: true,
       }),
-      makeFlatVariable({ id: '3', key: 'DEBUG', value: 'true' }),
+      makeFlatVariable({
+        id: '3',
+        key: 'DEBUG',
+        value: 'true' as EncryptedString,
+      }),
     ];
 
     const result = stripSecretFromApplicationVariables(variables);
@@ -60,12 +79,12 @@ describe('stripSecretFromApplicationVariables', () => {
     const variables = [
       makeFlatVariable({
         key: 'NULL_VALUE',
-        value: null as unknown as string,
+        value: null as unknown as EncryptedString | '',
       }),
       makeFlatVariable({
         id: '2',
         key: 'UNDEFINED_VALUE',
-        value: undefined as unknown as string,
+        value: undefined as unknown as EncryptedString | '',
       }),
     ];
 
@@ -79,7 +98,7 @@ describe('stripSecretFromApplicationVariables', () => {
     const variables = [
       makeFlatVariable({
         key: 'NUMBER_VALUE',
-        value: 123 as unknown as string,
+        value: 123 as unknown as EncryptedString | '',
       }),
     ];
 
@@ -90,11 +109,15 @@ describe('stripSecretFromApplicationVariables', () => {
 
   it('should return empty object when all variables are secret', () => {
     const variables = [
-      makeFlatVariable({ key: 'SECRET_1', value: 'val1', isSecret: true }),
+      makeFlatVariable({
+        key: 'SECRET_1',
+        value: 'val1' as EncryptedString,
+        isSecret: true,
+      }),
       makeFlatVariable({
         id: '2',
         key: 'SECRET_2',
-        value: 'val2',
+        value: 'val2' as EncryptedString,
         isSecret: true,
       }),
     ];

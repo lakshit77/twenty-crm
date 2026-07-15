@@ -2,10 +2,23 @@ import { Injectable } from '@nestjs/common';
 
 import { msg, t } from '@lingui/core/macro';
 import { ALL_METADATA_NAME } from 'twenty-shared/metadata';
-import { isDefined } from 'twenty-shared/utils';
+import {
+  FieldMetadataType,
+  type FilterableAndTSVectorFieldType,
+  type ViewFilterOperand,
+} from 'twenty-shared/types';
+import {
+  FILTER_OPERANDS_MAP,
+  getFilterOperandsForFilterableFieldType,
+  isDefined,
+} from 'twenty-shared/utils';
 
 import { findFlatEntityByUniversalIdentifier } from 'src/engine/metadata-modules/flat-entity/utils/find-flat-entity-by-universal-identifier.util';
+import { type FlatFieldMetadata } from 'src/engine/metadata-modules/flat-field-metadata/types/flat-field-metadata.type';
+import { getInvalidSelectFilterOptionValues } from 'src/engine/metadata-modules/flat-field-metadata/utils/get-invalid-select-filter-option-values.util';
 import { ViewFilterExceptionCode } from 'src/engine/metadata-modules/view-filter/exceptions/view-filter.exception';
+import { type ViewFilterValue } from 'src/engine/metadata-modules/view-filter/types/view-filter-value.type';
+import { isFieldMetadataEntityOfType } from 'src/engine/utils/is-field-metadata-of-type.util';
 import { type FailedFlatEntityValidation } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/builders/types/failed-flat-entity-validation.type';
 import { getEmptyFlatEntityValidationError } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/builders/utils/get-flat-entity-validation-error.util';
 import { type FlatEntityUpdateValidationArgs } from 'src/engine/workspace-manager/workspace-migration/workspace-migration-builder/types/universal-flat-entity-update-validation-args.type';
@@ -72,6 +85,56 @@ export class FlatViewFilterValidatorService {
         message: t`Field metadata not found`,
         userFriendlyMessage: msg`Field metadata not found`,
       });
+    } else {
+      let relationTargetFieldType: FieldMetadataType | undefined;
+
+      if (
+        isDefined(
+          flatViewFilterToValidate.relationTargetFieldMetadataUniversalIdentifier,
+        )
+      ) {
+        const relationTargetFieldMetadata = findFlatEntityByUniversalIdentifier(
+          {
+            universalIdentifier:
+              flatViewFilterToValidate.relationTargetFieldMetadataUniversalIdentifier,
+            flatEntityMaps: flatFieldMetadataMaps,
+          },
+        );
+
+        relationTargetFieldType = relationTargetFieldMetadata?.type;
+      }
+
+      const incompatibleOperandError = this.getIncompatibleOperandError({
+        operand: flatViewFilterToValidate.operand,
+        fieldType: referencedFieldMetadata.type,
+        subFieldName: flatViewFilterToValidate.subFieldName,
+        relationTargetFieldType,
+      });
+
+      if (isDefined(incompatibleOperandError)) {
+        validationResult.errors.push(incompatibleOperandError);
+      }
+
+      if (
+        isFieldMetadataEntityOfType(
+          referencedFieldMetadata,
+          FieldMetadataType.SELECT,
+        ) ||
+        isFieldMetadataEntityOfType(
+          referencedFieldMetadata,
+          FieldMetadataType.MULTI_SELECT,
+        )
+      ) {
+        const invalidSelectOptionError = this.getInvalidSelectOptionError({
+          referencedFieldMetadata,
+          operand: flatViewFilterToValidate.operand,
+          value: flatViewFilterToValidate.value,
+        });
+
+        if (isDefined(invalidSelectOptionError)) {
+          validationResult.errors.push(invalidSelectOptionError);
+        }
+      }
     }
 
     if (
@@ -180,6 +243,59 @@ export class FlatViewFilterValidatorService {
         message: t`Field metadata not found`,
         userFriendlyMessage: msg`Field metadata not found`,
       });
+    } else {
+      let relationTargetFieldType: FieldMetadataType | undefined;
+
+      if (
+        isDefined(
+          updatedFlatViewFilter.relationTargetFieldMetadataUniversalIdentifier,
+        )
+      ) {
+        const relationTargetFieldMetadata = findFlatEntityByUniversalIdentifier(
+          {
+            universalIdentifier:
+              updatedFlatViewFilter.relationTargetFieldMetadataUniversalIdentifier,
+            flatEntityMaps: flatFieldMetadataMaps,
+          },
+        );
+
+        relationTargetFieldType = relationTargetFieldMetadata?.type;
+      }
+
+      const incompatibleOperandError = this.getIncompatibleOperandError({
+        operand: updatedFlatViewFilter.operand,
+        fieldType: referencedFieldMetadata.type,
+        subFieldName: updatedFlatViewFilter.subFieldName,
+        relationTargetFieldType,
+      });
+
+      if (isDefined(incompatibleOperandError)) {
+        validationResult.errors.push(incompatibleOperandError);
+      }
+
+      if (
+        ('value' in flatEntityUpdate ||
+          'fieldMetadataUniversalIdentifier' in flatEntityUpdate ||
+          'operand' in flatEntityUpdate) &&
+        (isFieldMetadataEntityOfType(
+          referencedFieldMetadata,
+          FieldMetadataType.SELECT,
+        ) ||
+          isFieldMetadataEntityOfType(
+            referencedFieldMetadata,
+            FieldMetadataType.MULTI_SELECT,
+          ))
+      ) {
+        const invalidSelectOptionError = this.getInvalidSelectOptionError({
+          referencedFieldMetadata,
+          operand: updatedFlatViewFilter.operand,
+          value: updatedFlatViewFilter.value,
+        });
+
+        if (isDefined(invalidSelectOptionError)) {
+          validationResult.errors.push(invalidSelectOptionError);
+        }
+      }
     }
 
     if (isDefined(updatedFlatViewFilter.viewFilterGroupUniversalIdentifier)) {
@@ -199,5 +315,78 @@ export class FlatViewFilterValidatorService {
     }
 
     return validationResult;
+  }
+
+  private getInvalidSelectOptionError({
+    referencedFieldMetadata,
+    operand,
+    value,
+  }: {
+    referencedFieldMetadata: Pick<
+      FlatFieldMetadata<
+        FieldMetadataType.SELECT | FieldMetadataType.MULTI_SELECT
+      >,
+      'type' | 'options' | 'label'
+    >;
+    operand: ViewFilterOperand;
+    value: ViewFilterValue;
+  }) {
+    const invalidValues = getInvalidSelectFilterOptionValues({
+      fieldMetadata: referencedFieldMetadata,
+      operand,
+      value,
+    });
+
+    if (invalidValues.length === 0) {
+      return undefined;
+    }
+
+    const invalidValuesText = invalidValues.join(', ');
+    const allowedValuesText = referencedFieldMetadata.options
+      ?.map((option) => option.value)
+      .join(', ');
+
+    return {
+      code: ViewFilterExceptionCode.INVALID_VIEW_FILTER_DATA,
+      message: t`Filter on "${referencedFieldMetadata.label}" uses option(s) ${invalidValuesText} that do not exist. Allowed values: ${allowedValuesText}.`,
+      userFriendlyMessage: msg`Filter uses a select option that does not exist`,
+    };
+  }
+
+  private getIncompatibleOperandError({
+    operand,
+    fieldType,
+    subFieldName,
+    relationTargetFieldType,
+  }: {
+    operand: ViewFilterOperand;
+    fieldType: FieldMetadataType;
+    subFieldName: string | null | undefined;
+    relationTargetFieldType: FieldMetadataType | undefined;
+  }) {
+    const effectiveFieldType =
+      fieldType === FieldMetadataType.RELATION &&
+      isDefined(relationTargetFieldType)
+        ? relationTargetFieldType
+        : fieldType;
+
+    if (!(effectiveFieldType in FILTER_OPERANDS_MAP)) {
+      return undefined;
+    }
+
+    const allowedOperands = getFilterOperandsForFilterableFieldType({
+      filterType: effectiveFieldType as FilterableAndTSVectorFieldType,
+      subFieldName,
+    });
+
+    if (allowedOperands.includes(operand)) {
+      return undefined;
+    }
+
+    return {
+      code: ViewFilterExceptionCode.INVALID_VIEW_FILTER_DATA,
+      message: t`Operand "${operand}" is not supported on field type "${effectiveFieldType}". Supported operands: ${allowedOperands.join(', ')}.`,
+      userFriendlyMessage: msg`Filter operand is not supported for this field type`,
+    };
   }
 }

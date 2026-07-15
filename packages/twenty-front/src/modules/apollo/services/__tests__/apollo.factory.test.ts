@@ -2,13 +2,16 @@ import { gql, InMemoryCache } from '@apollo/client';
 import { CombinedGraphQLErrors } from '@apollo/client/errors';
 import fetchMock, { enableFetchMocks } from 'jest-fetch-mock';
 
+import { ApolloFactory, type Options } from '@/apollo/services/apollo.factory';
+import { CUSTOM_WORKSPACE_APPLICATION_MOCK } from '@/object-metadata/hooks/__tests__/constants/CustomWorkspaceApplicationMock.test.constant';
 import {
   AUTO_SELECT_FAST_MODEL_ID,
   AUTO_SELECT_SMART_MODEL_ID,
 } from 'twenty-shared/constants';
-import { ApolloFactory, type Options } from '@/apollo/services/apollo.factory';
-import { CUSTOM_WORKSPACE_APPLICATION_MOCK } from '@/object-metadata/hooks/__tests__/constants/CustomWorkspaceApplicationMock.test.constant';
-import { WorkspaceActivationStatus } from '~/generated-metadata/graphql';
+import {
+  WorkspaceActivationStatus,
+  WorkspaceDiscoverability,
+} from '~/generated-metadata/graphql';
 
 enableFetchMocks();
 
@@ -60,6 +63,7 @@ const mockWorkspace = {
   currentBillingSubscription: null,
   workspaceMembersCount: 0,
   isPublicInviteLinkEnabled: false,
+  workspaceDiscoverability: WorkspaceDiscoverability.PUBLIC,
   isGoogleAuthEnabled: false,
   isMicrosoftAuthEnabled: false,
   isPasswordAuthEnabled: false,
@@ -67,7 +71,6 @@ const mockWorkspace = {
   isGoogleAuthBypassEnabled: false,
   isPasswordAuthBypassEnabled: false,
   isMicrosoftAuthBypassEnabled: false,
-  hasValidEnterpriseKey: false,
   hasActivatedAndValidEnterpriseKey: false,
   hasValidSignedEnterpriseKey: false,
   hasValidEnterpriseValidityToken: false,

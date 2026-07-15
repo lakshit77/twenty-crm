@@ -7,12 +7,13 @@ import { type BillingSubscriptionEntity } from 'src/engine/core-modules/billing/
 import { type BillingPlanKey } from 'src/engine/core-modules/billing/enums/billing-plan-key.enum';
 import { BillingProductKey } from 'src/engine/core-modules/billing/enums/billing-product-key.enum';
 import { type SubscriptionInterval } from 'src/engine/core-modules/billing/enums/billing-subscription-interval.enum';
+import { type SubscriptionStatus } from 'src/engine/core-modules/billing/enums/billing-subscription-status.enum';
 import { BillingUsageType } from 'src/engine/core-modules/billing/enums/billing-usage-type.enum';
 import { type BillingProductService } from 'src/engine/core-modules/billing/services/billing-product.service';
 import { type BillingSubscriptionPhaseService } from 'src/engine/core-modules/billing/services/billing-subscription-phase.service';
 import { type StripeSubscriptionScheduleService } from 'src/engine/core-modules/billing/stripe/services/stripe-subscription-schedule.service';
 import { type BillingMeterPrice } from 'src/engine/core-modules/billing/types/billing-meter-price.type';
-
+import { type WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
 import { buildSubscription } from './build-subscription.util';
 
 export const repoMock = <T extends ObjectLiteral>() =>
@@ -81,7 +82,7 @@ export const buildDefaultMeteredTiers = (
 
 export const arrangeBillingSubscriptionRepositoryFindOneOrFail = (
   billingSubscriptionRepository: jest.Mocked<
-    Repository<BillingSubscriptionEntity>
+    WorkspaceScopedRepository<BillingSubscriptionEntity>
   >,
   params: {
     planKey?: BillingPlanKey;
@@ -89,6 +90,7 @@ export const arrangeBillingSubscriptionRepositoryFindOneOrFail = (
     licensedPriceId?: string;
     resourceCreditPriceId?: string;
     seats?: number;
+    status?: SubscriptionStatus;
     workspaceId?: string;
     stripeSubscriptionId?: string;
     currentPeriodEnd?: Date;

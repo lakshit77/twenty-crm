@@ -10,6 +10,7 @@ import { BillingSubscriptionItemEntity } from 'src/engine/core-modules/billing/e
 import { BillingSubscriptionEntity } from 'src/engine/core-modules/billing/entities/billing-subscription.entity';
 import { BillingPlanKey } from 'src/engine/core-modules/billing/enums/billing-plan-key.enum';
 import { SubscriptionInterval } from 'src/engine/core-modules/billing/enums/billing-subscription-interval.enum';
+import { SubscriptionStatus } from 'src/engine/core-modules/billing/enums/billing-subscription-status.enum';
 import { BillingPriceService } from 'src/engine/core-modules/billing/services/billing-price.service';
 import { BillingProductService } from 'src/engine/core-modules/billing/services/billing-product.service';
 import { BillingSubscriptionPhaseService } from 'src/engine/core-modules/billing/services/billing-subscription-phase.service';
@@ -20,7 +21,8 @@ import { StripeInvoiceService } from 'src/engine/core-modules/billing/stripe/ser
 import { StripeSubscriptionScheduleService } from 'src/engine/core-modules/billing/stripe/services/stripe-subscription-schedule.service';
 import { StripeSubscriptionService } from 'src/engine/core-modules/billing/stripe/services/stripe-subscription.service';
 import { SubscriptionUpdateType } from 'src/engine/core-modules/billing/types/billing-subscription-update.type';
-
+import { getWorkspaceScopedRepositoryToken } from 'src/engine/twenty-orm/workspace-scoped-repository/get-workspace-scoped-repository-token.util';
+import { type WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
 import {
   arrangeBillingPriceRepositoryFindOneOrFail,
   arrangeBillingProductServiceGetProductPrices,
@@ -48,7 +50,7 @@ describe('BillingSubscriptionUpdateService', () => {
   let module: TestingModule;
   let service: BillingSubscriptionUpdateService;
   let billingSubscriptionRepository: jest.Mocked<
-    Repository<BillingSubscriptionEntity>
+    WorkspaceScopedRepository<BillingSubscriptionEntity>
   >;
   let billingPriceRepository: jest.Mocked<Repository<BillingPriceEntity>>;
   let billingProductService: jest.Mocked<BillingProductService>;
@@ -136,7 +138,7 @@ describe('BillingSubscriptionUpdateService', () => {
           },
         },
         {
-          provide: getRepositoryToken(BillingSubscriptionEntity),
+          provide: getWorkspaceScopedRepositoryToken(BillingSubscriptionEntity),
           useValue: repoMock<BillingSubscriptionEntity>(),
         },
         {
@@ -161,7 +163,7 @@ describe('BillingSubscriptionUpdateService', () => {
 
     service = module.get(BillingSubscriptionUpdateService);
     billingSubscriptionRepository = module.get(
-      getRepositoryToken(BillingSubscriptionEntity),
+      getWorkspaceScopedRepositoryToken(BillingSubscriptionEntity),
     );
     billingPriceRepository = module.get(getRepositoryToken(BillingPriceEntity));
     billingProductService = module.get(BillingProductService);
@@ -229,7 +231,7 @@ describe('BillingSubscriptionUpdateService', () => {
         }) as BillingPriceEntity,
       ]);
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.PLAN,
         newPlan: BillingPlanKey.ENTERPRISE,
       });
@@ -256,6 +258,85 @@ describe('BillingSubscriptionUpdateService', () => {
       expect(
         stripeSubscriptionScheduleService.updateSchedule,
       ).not.toHaveBeenCalled();
+      expect(
+        billingSubscriptionService.syncSubscriptionToDatabase,
+      ).toHaveBeenCalled();
+    });
+
+    it('should update from PRO to ENTERPRISE during trial without immediate invoicing', async () => {
+      arrangeBillingSubscriptionRepositoryFindOneOrFail(
+        billingSubscriptionRepository,
+        {
+          planKey: BillingPlanKey.PRO,
+          interval: SubscriptionInterval.Month,
+          licensedPriceId: LICENSE_PRICE_PRO_MONTH_ID,
+          resourceCreditPriceId: METER_PRICE_PRO_MONTH_ID,
+          seats: 1,
+          status: SubscriptionStatus.Trialing,
+        },
+      );
+
+      arrangeBillingPriceRepositoryFindOneOrFail(billingPriceRepository, {
+        [LICENSE_PRICE_PRO_MONTH_ID]: buildBillingPriceEntity({
+          stripePriceId: LICENSE_PRICE_PRO_MONTH_ID,
+          planKey: BillingPlanKey.PRO,
+          interval: SubscriptionInterval.Month,
+          isMetered: false,
+        }),
+        [METER_PRICE_PRO_MONTH_ID]: buildBillingPriceEntity({
+          stripePriceId: METER_PRICE_PRO_MONTH_ID,
+          planKey: BillingPlanKey.PRO,
+          interval: SubscriptionInterval.Month,
+          isMetered: true,
+          tiers: buildDefaultMeteredTiers(),
+        }),
+      });
+
+      arrangeStripeSubscriptionScheduleServiceLoadSubscriptionSchedule(
+        stripeSubscriptionScheduleService,
+        {},
+      );
+
+      arrangeBillingProductServiceGetProductPrices(billingProductService, [
+        buildBillingPriceEntity({
+          stripePriceId: LICENSE_PRICE_ENTERPRISE_MONTH_ID,
+          planKey: BillingPlanKey.ENTERPRISE,
+          interval: SubscriptionInterval.Month,
+          isMetered: false,
+        }) as BillingPriceEntity,
+        buildBillingPriceEntity({
+          stripePriceId: METER_PRICE_ENTERPRISE_MONTH_ID,
+          planKey: BillingPlanKey.ENTERPRISE,
+          interval: SubscriptionInterval.Month,
+          isMetered: true,
+          tiers: buildDefaultMeteredTiers(),
+        }) as BillingPriceEntity,
+      ]);
+
+      await service.updateSubscription('ws_1', 'sub_db_1', {
+        type: SubscriptionUpdateType.PLAN,
+        newPlan: BillingPlanKey.ENTERPRISE,
+      });
+
+      expect(stripeSubscriptionService.updateSubscription).toHaveBeenCalledWith(
+        'sub_1',
+        {
+          items: [
+            {
+              id: 'si_licensed',
+              price: LICENSE_PRICE_ENTERPRISE_MONTH_ID,
+              quantity: 1,
+            },
+            {
+              id: 'si_resource_credit',
+              price: METER_PRICE_ENTERPRISE_MONTH_ID,
+              quantity: 1,
+            },
+          ],
+          proration_behavior: 'none',
+          metadata: { plan: BillingPlanKey.ENTERPRISE },
+        },
+      );
       expect(
         billingSubscriptionService.syncSubscriptionToDatabase,
       ).toHaveBeenCalled();
@@ -355,7 +436,7 @@ describe('BillingSubscriptionUpdateService', () => {
         } as Stripe.SubscriptionScheduleUpdateParams.Phase,
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.PLAN,
         newPlan: BillingPlanKey.ENTERPRISE,
       });
@@ -464,7 +545,7 @@ describe('BillingSubscriptionUpdateService', () => {
         } as Stripe.SubscriptionScheduleUpdateParams.Phase,
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.PLAN,
         newPlan: BillingPlanKey.PRO,
       });
@@ -577,7 +658,7 @@ describe('BillingSubscriptionUpdateService', () => {
         } as Stripe.SubscriptionScheduleUpdateParams.Phase,
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.PLAN,
         newPlan: BillingPlanKey.PRO,
       });
@@ -654,7 +735,7 @@ describe('BillingSubscriptionUpdateService', () => {
         }) as BillingPriceEntity,
       ]);
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.INTERVAL,
         newInterval: SubscriptionInterval.Year,
       });
@@ -676,6 +757,84 @@ describe('BillingSubscriptionUpdateService', () => {
           ],
           proration_behavior: 'create_prorations',
           billing_cycle_anchor: 'now',
+        },
+      );
+      expect(
+        billingSubscriptionService.syncSubscriptionToDatabase,
+      ).toHaveBeenCalled();
+    });
+
+    it('should change interval from monthly to yearly during trial without resetting billing anchor', async () => {
+      arrangeBillingSubscriptionRepositoryFindOneOrFail(
+        billingSubscriptionRepository,
+        {
+          planKey: BillingPlanKey.PRO,
+          interval: SubscriptionInterval.Month,
+          licensedPriceId: LICENSE_PRICE_PRO_MONTH_ID,
+          resourceCreditPriceId: METER_PRICE_PRO_MONTH_ID,
+          seats: 1,
+          status: SubscriptionStatus.Trialing,
+        },
+      );
+
+      arrangeBillingPriceRepositoryFindOneOrFail(billingPriceRepository, {
+        [LICENSE_PRICE_PRO_MONTH_ID]: buildBillingPriceEntity({
+          stripePriceId: LICENSE_PRICE_PRO_MONTH_ID,
+          planKey: BillingPlanKey.PRO,
+          interval: SubscriptionInterval.Month,
+          isMetered: false,
+        }),
+        [METER_PRICE_PRO_MONTH_ID]: buildBillingPriceEntity({
+          stripePriceId: METER_PRICE_PRO_MONTH_ID,
+          planKey: BillingPlanKey.PRO,
+          interval: SubscriptionInterval.Month,
+          isMetered: true,
+          tiers: buildDefaultMeteredTiers(),
+        }),
+      });
+
+      arrangeStripeSubscriptionScheduleServiceLoadSubscriptionSchedule(
+        stripeSubscriptionScheduleService,
+        {},
+      );
+
+      arrangeBillingProductServiceGetProductPrices(billingProductService, [
+        buildBillingPriceEntity({
+          stripePriceId: LICENSE_PRICE_PRO_YEAR_ID,
+          planKey: BillingPlanKey.PRO,
+          interval: SubscriptionInterval.Year,
+          isMetered: false,
+        }) as BillingPriceEntity,
+        buildBillingPriceEntity({
+          stripePriceId: METER_PRICE_PRO_YEAR_ID,
+          planKey: BillingPlanKey.PRO,
+          interval: SubscriptionInterval.Year,
+          isMetered: true,
+          tiers: buildDefaultMeteredTiers(),
+        }) as BillingPriceEntity,
+      ]);
+
+      await service.updateSubscription('ws_1', 'sub_db_1', {
+        type: SubscriptionUpdateType.INTERVAL,
+        newInterval: SubscriptionInterval.Year,
+      });
+
+      expect(stripeSubscriptionService.updateSubscription).toHaveBeenCalledWith(
+        'sub_1',
+        {
+          items: [
+            {
+              id: 'si_licensed',
+              price: LICENSE_PRICE_PRO_YEAR_ID,
+              quantity: 1,
+            },
+            {
+              id: 'si_resource_credit',
+              price: METER_PRICE_PRO_YEAR_ID,
+              quantity: 1,
+            },
+          ],
+          proration_behavior: 'none',
         },
       );
       expect(
@@ -775,7 +934,7 @@ describe('BillingSubscriptionUpdateService', () => {
         } as Stripe.SubscriptionScheduleUpdateParams.Phase,
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.INTERVAL,
         newInterval: SubscriptionInterval.Year,
       });
@@ -884,7 +1043,7 @@ describe('BillingSubscriptionUpdateService', () => {
         } as Stripe.SubscriptionScheduleUpdateParams.Phase,
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.INTERVAL,
         newInterval: SubscriptionInterval.Month,
       });
@@ -997,7 +1156,7 @@ describe('BillingSubscriptionUpdateService', () => {
         } as Stripe.SubscriptionScheduleUpdateParams.Phase,
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.INTERVAL,
         newInterval: SubscriptionInterval.Month,
       });
@@ -1058,7 +1217,7 @@ describe('BillingSubscriptionUpdateService', () => {
         {},
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.SEATS,
         newSeats: 2,
       });
@@ -1078,7 +1237,7 @@ describe('BillingSubscriptionUpdateService', () => {
               quantity: 1,
             },
           ],
-          proration_behavior: 'create_prorations',
+          proration_behavior: 'always_invoice',
         },
       );
       expect(
@@ -1162,7 +1321,7 @@ describe('BillingSubscriptionUpdateService', () => {
         } as Stripe.SubscriptionScheduleUpdateParams.Phase,
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.SEATS,
         newSeats: 2,
       });
@@ -1182,7 +1341,7 @@ describe('BillingSubscriptionUpdateService', () => {
               quantity: 1,
             },
           ],
-          proration_behavior: 'create_prorations',
+          proration_behavior: 'always_invoice',
         },
       );
       expect(
@@ -1236,7 +1395,7 @@ describe('BillingSubscriptionUpdateService', () => {
         {},
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.SEATS,
         newSeats: 1,
       });
@@ -1340,7 +1499,7 @@ describe('BillingSubscriptionUpdateService', () => {
         } as Stripe.SubscriptionScheduleUpdateParams.Phase,
       );
 
-      await service.updateSubscription('sub_db_1', {
+      await service.updateSubscription('ws_1', 'sub_db_1', {
         type: SubscriptionUpdateType.SEATS,
         newSeats: 1,
       });
@@ -1379,6 +1538,32 @@ describe('BillingSubscriptionUpdateService', () => {
       expect(
         billingSubscriptionService.syncSubscriptionToDatabase,
       ).toHaveBeenCalled();
+    });
+  });
+
+  describe('shouldUpdateAtSubscriptionPeriodEnd', () => {
+    it('should update plan changes immediately during trial', async () => {
+      await expect(
+        service.shouldUpdateAtSubscriptionPeriodEnd(
+          { status: SubscriptionStatus.Trialing } as BillingSubscriptionEntity,
+          {
+            type: SubscriptionUpdateType.PLAN,
+            newPlan: BillingPlanKey.PRO,
+          },
+        ),
+      ).resolves.toBe(false);
+    });
+
+    it('should update interval changes immediately during trial', async () => {
+      await expect(
+        service.shouldUpdateAtSubscriptionPeriodEnd(
+          { status: SubscriptionStatus.Trialing } as BillingSubscriptionEntity,
+          {
+            type: SubscriptionUpdateType.INTERVAL,
+            newInterval: SubscriptionInterval.Month,
+          },
+        ),
+      ).resolves.toBe(false);
     });
   });
 });

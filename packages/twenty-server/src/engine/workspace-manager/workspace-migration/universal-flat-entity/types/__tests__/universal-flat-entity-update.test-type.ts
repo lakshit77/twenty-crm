@@ -13,10 +13,12 @@ type Assertions = [
       | 'description'
       | 'isActive'
       | 'defaultValue'
-      | 'standardOverrides'
+      | 'overrides'
       | 'options'
       | 'isUnique'
       | 'isLabelSyncedWithName'
+      | 'isUIEditable'
+      | 'isNullable'
       | 'universalSettings'
     >
   >,
@@ -28,7 +30,7 @@ type Assertions = [
       | 'color'
       | 'description'
       | 'isActive'
-      | 'standardOverrides'
+      | 'overrides'
       | 'isLabelSyncedWithName'
       | 'nameSingular'
       | 'namePlural'
@@ -37,6 +39,8 @@ type Assertions = [
       | 'labelIdentifierFieldMetadataUniversalIdentifier'
       | 'imageIdentifierFieldMetadataUniversalIdentifier'
       | 'isSearchable'
+      | 'isUIEditable'
+      | 'isUICreatable'
     >
   >,
 ];

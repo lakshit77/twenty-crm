@@ -1,6 +1,6 @@
 ---
 title: Yayımlama
-icon: yükle
+icon: upload
 description: Twenty uygulamanızı pazaryerine sunun ya da dahili olarak dağıtın.
 ---
 
@@ -180,15 +180,15 @@ npm’ye yayımlamak, uygulamanızın Twenty pazaryerinde keşfedilebilir olmas�
 
 ### Pazaryeri meta verileri
 
-`defineApplication()` yapılandırması, uygulamanızın pazar yerinde nasıl görüneceğini kontrol eden isteğe bağlı alanları destekler. `public/` klasöründeki görsellere başvurmak için `logoUrl` ve `screenshots` kullanın:
+`defineApplication()` yapılandırması, uygulamanızın pazar yerinde nasıl görüneceğini kontrol eden isteğe bağlı alanları destekler. `public/` klasöründeki görsellere başvurmak için `logo` ve `galleryImages` kullanın:
 
 ```ts src/application-config.ts
 export default defineApplication({
   universalIdentifier: '...',
   displayName: 'My App',
   description: 'A great app',
-  logoUrl: 'public/logo.png',
-  screenshots: [
+  logo: 'public/logo.png',
+  galleryImages: [
     'public/screenshot-1.png',
     'public/screenshot-2.png',
   ],
@@ -197,12 +197,12 @@ export default defineApplication({
 
 Pazar yeri alanlarının tam listesi için Uygulama Oluşturma sayfasındaki [defineApplication akordeonu](/l/tr/developers/extend/apps/config/application#marketplace-metadata)'na bakın (`author`, `category`, `aboutDescription`, `websiteUrl`, `termsUrl`, vb.).
 
-#### Önerilen ekran görüntüsü boyutları
+#### Önerilen galeri görseli boyutları
 
-Marketplace, `screenshots`'ı sabit `8:5` oranlı bir kapsayıcıda görüntüler (örneğin, `1600×1000 px`).
+Marketplace, `galleryImages`'ı sabit `8:5` oranlı bir kapsayıcıda görüntüler (örneğin, `1600×1000 px`).
 
 <Note>
-Herhangi bir en-boy oranındaki ekran görüntüleri eksiksiz görüntülenir ve asla kırpılmaz, ancak `8:5`'ten belirgin ölçüde daha uzun veya daha dar olanlarda yanlarda boş bantlar görünür.
+Herhangi bir en-boy oranındaki galeri görselleri eksiksiz görüntülenir ve asla kırpılmaz, ancak `8:5`'ten belirgin ölçüde daha uzun veya daha dar olanlarda yanlarda boş bantlar görünür.
 </Note>
 
 ### Yayımla
@@ -229,7 +229,7 @@ yarn twenty dev:catalog-sync
 # yarn twenty dev:catalog-sync --remote production
 ```
 
-Pazar yerinde gösterilen meta veriler, `defineApplication()` yapılandırmanızdan gelir — `displayName`, `description`, `author`, `category`, `logoUrl`, `screenshots`, `aboutDescription`, `websiteUrl` ve `termsUrl` gibi alanlar.
+Pazaryerinde gösterilen meta veriler, `defineApplication()` yapılandırmanızdan gelir — yukarıdaki [Pazaryeri meta verileri](#marketplace-metadata) bölümüne bakın.
 
 <Note>
 Uygulamanız `defineApplication()` içinde bir `aboutDescription` tanımlamıyorsa, pazaryeri, hakkında sayfasının içeriği olarak paketinizin npm'deki `README.md` dosyasını otomatik olarak kullanır. Bu, hem npm hem de Twenty pazaryeri için tek bir README dosyası kullanabileceğiniz anlamına gelir. Pazaryerinde farklı bir açıklama istiyorsanız, `aboutDescription` değerini açıkça ayarlayın.

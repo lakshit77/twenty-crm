@@ -1,3 +1,4 @@
+import { getFieldUniversalIdentifier } from 'twenty-shared/application';
 import {
   STANDARD_OBJECTS,
   DEFAULT_RELATIONS_OBJECTS_STANDARD_IDS,
@@ -5,7 +6,9 @@ import {
 import { FieldMetadataType } from 'twenty-shared/types';
 import { capitalize, isDefined } from 'twenty-shared/utils';
 
+import { STANDARD_RELATION_FIELD_PROPERTIES_BY_RELATION_OBJECT } from 'src/engine/metadata-modules/object-metadata/constants/standard-relation-field-properties.constant';
 import { computeMorphOrRelationFieldJoinColumnName } from 'src/engine/metadata-modules/field-metadata/utils/compute-morph-or-relation-field-join-column-name.util';
+import { i18nLabel } from 'src/engine/workspace-manager/twenty-standard-application/utils/i18n-label.util';
 import { RelationType } from 'src/engine/metadata-modules/field-metadata/interfaces/relation-type.interface';
 
 import { type FlatApplication } from 'src/engine/core-modules/application/types/flat-application.type';
@@ -19,6 +22,7 @@ import {
 } from 'src/engine/metadata-modules/object-metadata/object-metadata.exception';
 import { STANDARD_OBJECT_ICONS } from 'src/engine/workspace-manager/workspace-migration/constant/standard-object-icons';
 import { type UniversalFlatFieldMetadata } from 'src/engine/workspace-manager/workspace-migration/universal-flat-entity/types/universal-flat-field-metadata.type';
+import { type UniversalFlatIndexMetadata } from 'src/engine/workspace-manager/workspace-migration/universal-flat-entity/types/universal-flat-index-metadata.type';
 import { type UniversalFlatObjectMetadata } from 'src/engine/workspace-manager/workspace-migration/universal-flat-entity/types/universal-flat-object-metadata.type';
 
 const morphIdByRelationObjectNameSingular = {
@@ -41,11 +45,13 @@ export type BuildDefaultRelationFieldsForCustomObjectArgs = {
 type SourceAndTargetFlatFieldMetadatasRecord = {
   standardSourceFlatFieldMetadatas: UniversalFlatFieldMetadata[];
   standardTargetFlatFieldMetadatas: UniversalFlatFieldMetadata[];
+  standardTargetFlatIndexMetadatas: UniversalFlatIndexMetadata[];
 };
 const EMPTY_SOURCE_AND_TARGET_FLAT_FIELD_METADATAS_RECORD: SourceAndTargetFlatFieldMetadatasRecord =
   {
     standardSourceFlatFieldMetadatas: [],
     standardTargetFlatFieldMetadatas: [],
+    standardTargetFlatIndexMetadatas: [],
   };
 
 export const buildDefaultRelationFlatFieldMetadatasForCustomObject = ({
@@ -91,10 +97,15 @@ export const buildDefaultRelationFlatFieldMetadatasForCustomObject = ({
             flatEntityId: targetFlatObjectMetadataId,
           });
 
-        const icon =
+        const targetFieldIcon =
           STANDARD_OBJECT_ICONS[
             targetFlatObjectMetadata.nameSingular as keyof typeof STANDARD_OBJECT_ICONS
           ] || 'IconBuildingSkyscraper';
+
+        const standardFieldProperties =
+          STANDARD_RELATION_FIELD_PROPERTIES_BY_RELATION_OBJECT[
+            objectMetadataNameSingular
+          ];
 
         const morphFieldName = `target${capitalize(sourceFlatObjectMetadata.nameSingular)}`;
         const fieldName = isObjectMigratedToMorphRelations
@@ -107,7 +118,23 @@ export const buildDefaultRelationFlatFieldMetadatasForCustomObject = ({
         const morphId =
           morphIdByRelationObjectNameSingular[objectMetadataNameSingular];
 
-        const { flatFieldMetadatas } =
+        // Default relation fields get deterministic universal identifiers so
+        // that provisioning the same custom object always yields the same
+        // identifiers (matching the SDK manifest derivation).
+        const sourceFieldUniversalIdentifier = getFieldUniversalIdentifier({
+          applicationUniversalIdentifier: flatApplication.universalIdentifier,
+          objectUniversalIdentifier:
+            sourceFlatObjectMetadata.universalIdentifier,
+          name: targetFlatObjectMetadata.namePlural,
+        });
+        const targetFieldUniversalIdentifier = getFieldUniversalIdentifier({
+          applicationUniversalIdentifier: flatApplication.universalIdentifier,
+          objectUniversalIdentifier:
+            targetFlatObjectMetadata.universalIdentifier,
+          name: fieldName,
+        });
+
+        const { flatFieldMetadatas, indexMetadatas } =
           generateMorphOrRelationFlatFieldMetadataPair({
             sourceFlatObjectMetadata,
             targetFlatObjectMetadata,
@@ -118,11 +145,13 @@ export const buildDefaultRelationFlatFieldMetadatasForCustomObject = ({
             sourceFlatObjectMetadataJoinColumnName: joinColumnName,
             morphId,
             targetFieldName: fieldName,
+            sourceFieldUniversalIdentifier,
+            targetFieldUniversalIdentifier,
             createFieldInput: {
-              icon: 'IconBuildingSkyscraper',
+              icon: standardFieldProperties.icon,
               type: FieldMetadataType.RELATION,
               name: targetFlatObjectMetadata.namePlural,
-              label: capitalize(targetFlatObjectMetadata.labelPlural),
+              label: i18nLabel(standardFieldProperties.label),
               isSystem: false,
               relationCreationPayload: {
                 type: RelationType.ONE_TO_MANY,
@@ -130,7 +159,7 @@ export const buildDefaultRelationFlatFieldMetadatasForCustomObject = ({
                 targetFieldLabel: capitalize(
                   sourceFlatObjectMetadata.nameSingular,
                 ),
-                targetFieldIcon: icon,
+                targetFieldIcon: targetFieldIcon,
               },
             },
           });
@@ -143,6 +172,10 @@ export const buildDefaultRelationFlatFieldMetadatasForCustomObject = ({
           standardTargetFlatFieldMetadatas: [
             ...sourceAndTargetFlatFieldMetadatasRecord.standardTargetFlatFieldMetadatas,
             flatFieldMetadatas[1],
+          ],
+          standardTargetFlatIndexMetadatas: [
+            ...sourceAndTargetFlatFieldMetadatasRecord.standardTargetFlatIndexMetadatas,
+            ...indexMetadatas,
           ],
         };
       },

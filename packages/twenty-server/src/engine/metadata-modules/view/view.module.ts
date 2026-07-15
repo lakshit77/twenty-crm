@@ -12,6 +12,7 @@ import { ViewFieldModule } from 'src/engine/metadata-modules/view-field/view-fie
 import { ViewFilterModule } from 'src/engine/metadata-modules/view-filter/view-filter.module';
 import { ViewPermissionsModule } from 'src/engine/metadata-modules/view-permissions/view-permissions.module';
 import { ViewSortModule } from 'src/engine/metadata-modules/view-sort/view-sort.module';
+import { CompleteViewUpsertService } from 'src/engine/metadata-modules/view/tools/services/complete-view-upsert.service';
 import { ViewWidgetUpsertService } from 'src/engine/metadata-modules/view/services/view-widget-upsert.service';
 import { ViewController } from 'src/engine/metadata-modules/view/controllers/view.controller';
 import { ViewEntity } from 'src/engine/metadata-modules/view/entities/view.entity';
@@ -19,6 +20,7 @@ import { ViewResolver } from 'src/engine/metadata-modules/view/resolvers/view.re
 import { ViewQueryParamsService } from 'src/engine/metadata-modules/view/services/view-query-params.service';
 import { ViewService } from 'src/engine/metadata-modules/view/services/view.service';
 import { ViewToolsFactory } from 'src/engine/metadata-modules/view/tools/view-tools.factory';
+import { provideWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/provide-workspace-scoped-repository';
 import { WorkspaceCacheStorageModule } from 'src/engine/workspace-cache-storage/workspace-cache-storage.module';
 import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace-migration/workspace-migration.module';
 
@@ -42,10 +44,12 @@ import { WorkspaceMigrationModule } from 'src/engine/workspace-manager/workspace
   controllers: [ViewController],
   providers: [
     ViewService,
+    CompleteViewUpsertService,
     ViewResolver,
     ViewQueryParamsService,
     ViewToolsFactory,
     ViewWidgetUpsertService,
+    provideWorkspaceScopedRepository(ViewEntity),
   ],
   exports: [
     ViewService,

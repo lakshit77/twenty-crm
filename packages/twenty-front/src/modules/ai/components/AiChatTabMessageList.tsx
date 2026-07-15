@@ -1,6 +1,7 @@
 import { AiChatErrorUnderMessageList } from '@/ai/components/AiChatErrorUnderMessageList';
 import { AiChatLastMessageWithStreamingState } from '@/ai/components/AiChatLastMessageWithStreamingState';
 import { AiChatNonLastMessageIdsList } from '@/ai/components/AiChatNonLastMessageIdsList';
+import { AiChatPendingResponseIndicator } from '@/ai/components/AiChatPendingResponseIndicator';
 import { AiChatScrollToBottomButton } from '@/ai/components/AiChatScrollToBottomButton';
 import { AgentChatScrollToBottomOnDisplayedThreadChangeLayoutEffect } from '@/ai/components/AgentChatScrollToBottomOnDisplayedThreadChangeLayoutEffect';
 import { AgentChatScrollToBottomOnMountLayoutEffect } from '@/ai/components/AgentChatScrollToBottomOnMountLayoutEffect';
@@ -17,11 +18,16 @@ const StyledScrollWrapperContainer = styled.div`
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: ${themeCssVariables.spacing[2]};
   overflow-y: auto;
-  padding: ${themeCssVariables.spacing[3]};
   position: relative;
-  width: calc(100% - 24px);
+  width: 100%;
+`;
+
+const StyledMessageListContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: ${themeCssVariables.spacing[2]};
+  padding: ${themeCssVariables.spacing[4]};
 `;
 
 export const AiChatTabMessageList = () => {
@@ -46,9 +52,12 @@ export const AiChatTabMessageList = () => {
       }}
     >
       <ScrollWrapper componentInstanceId={AI_CHAT_SCROLL_WRAPPER_ID}>
-        <AiChatNonLastMessageIdsList />
-        <AiChatLastMessageWithStreamingState />
-        <AiChatErrorUnderMessageList />
+        <StyledMessageListContent>
+          <AiChatNonLastMessageIdsList />
+          <AiChatLastMessageWithStreamingState />
+          <AiChatPendingResponseIndicator />
+          <AiChatErrorUnderMessageList />
+        </StyledMessageListContent>
         <AgentChatScrollToBottomOnDisplayedThreadChangeLayoutEffect />
         <AgentChatScrollToBottomOnMountLayoutEffect />
       </ScrollWrapper>

@@ -36,9 +36,7 @@
         {
           "key": "userGuideOverview",
           "label": "Overview",
-          "pages": [
-            "user-guide/introduction"
-          ]
+          "pages": ["user-guide/introduction"]
         },
         {
           "key": "dataModel",
@@ -220,9 +218,7 @@
             {
               "key": "aiHowTos",
               "label": "How-Tos",
-              "pages": [
-                "user-guide/ai/how-tos/ai-faq"
-              ]
+              "pages": ["user-guide/ai/how-tos/ai-faq"]
             }
           ]
         },
@@ -309,9 +305,7 @@
             {
               "key": "permissionsAccessHowTos",
               "label": "How-Tos",
-              "pages": [
-                "user-guide/permissions-access/how-tos/permissions-faq"
-              ]
+              "pages": ["user-guide/permissions-access/how-tos/permissions-faq"]
             }
           ]
         },
@@ -332,9 +326,7 @@
             {
               "key": "billingHowTos",
               "label": "How-Tos",
-              "pages": [
-                "user-guide/billing/how-tos/billing-faq"
-              ]
+              "pages": ["user-guide/billing/how-tos/billing-faq"]
             }
           ]
         },
@@ -359,9 +351,7 @@
             {
               "key": "settingsHowTos",
               "label": "How-Tos",
-              "pages": [
-                "user-guide/settings/how-tos/settings-faq"
-              ]
+              "pages": ["user-guide/settings/how-tos/settings-faq"]
             }
           ]
         }
@@ -374,9 +364,7 @@
         {
           "key": "developersOverview",
           "label": "Overview",
-          "pages": [
-            "developers/introduction"
-          ]
+          "pages": ["developers/introduction"]
         },
         {
           "key": "apps",
@@ -392,6 +380,19 @@
                 "developers/extend/apps/getting-started/local-server",
                 "developers/extend/apps/getting-started/scaffolding",
                 "developers/extend/apps/getting-started/troubleshooting"
+              ]
+            },
+            {
+              "key": "appsTutorial",
+              "label": "Tutorial",
+              "pages": [
+                "developers/extend/apps/tutorials/document-generator/overview",
+                "developers/extend/apps/tutorials/document-generator/data-model",
+                "developers/extend/apps/tutorials/document-generator/generating-documents",
+                "developers/extend/apps/tutorials/document-generator/http-routes",
+                "developers/extend/apps/tutorials/document-generator/building-the-ui",
+                "developers/extend/apps/tutorials/document-generator/ai-agent",
+                "developers/extend/apps/tutorials/document-generator/publishing"
               ]
             },
             {
@@ -412,6 +413,7 @@
                 "developers/extend/apps/data/overview",
                 "developers/extend/apps/data/objects",
                 "developers/extend/apps/data/extending-objects",
+                "developers/extend/apps/data/system-fields",
                 "developers/extend/apps/data/relations"
               ]
             },
@@ -421,6 +423,7 @@
               "pages": [
                 "developers/extend/apps/logic/overview",
                 "developers/extend/apps/logic/logic-functions",
+                "developers/extend/apps/logic/key-value-store",
                 "developers/extend/apps/logic/skills-and-agents",
                 "developers/extend/apps/logic/connections"
               ]
@@ -443,8 +446,16 @@
               "pages": [
                 "developers/extend/apps/operations/overview",
                 "developers/extend/apps/operations/cli",
+                "developers/extend/apps/operations/sync-and-recovery",
                 "developers/extend/apps/operations/testing",
                 "developers/extend/apps/operations/publishing"
+              ]
+            },
+            {
+              "key": "appsTranslations",
+              "label": "Translations",
+              "pages": [
+                "developers/extend/apps/translations/overview"
               ]
             }
           ]
@@ -465,7 +476,6 @@
             "developers/self-host/capabilities/docker-compose",
             "developers/self-host/capabilities/setup",
             "developers/self-host/capabilities/upgrade-guide",
-            "developers/self-host/capabilities/cloud-providers",
             "developers/self-host/capabilities/troubleshooting"
           ]
         },

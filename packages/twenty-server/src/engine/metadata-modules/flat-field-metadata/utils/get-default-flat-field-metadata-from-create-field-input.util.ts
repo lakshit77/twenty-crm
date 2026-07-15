@@ -1,4 +1,7 @@
-import { extractAndSanitizeObjectStringFields } from 'twenty-shared/utils';
+import {
+  extractAndSanitizeObjectStringFields,
+  isDefined,
+} from 'twenty-shared/utils';
 import { v4 } from 'uuid';
 
 import { type FlatApplication } from 'src/engine/core-modules/application/types/flat-application.type';
@@ -32,17 +35,17 @@ export const getDefaultFlatFieldMetadata = ({
     description: createFieldInput.description ?? null,
     icon: createFieldInput.icon ?? null,
     isActive: true,
-    isCustom: true,
     isLabelSyncedWithName: createFieldInput.isLabelSyncedWithName ?? false,
     isNullable: generateNullable(
       createFieldInput.isNullable,
       createFieldInput.isRemoteCreation,
     ),
     isSystem: createFieldInput.isSystem ?? false,
+    isSystemSideEffect: false,
     isUnique: createFieldInput.isUnique ?? false,
     label: createFieldInput.label,
     name: createFieldInput.name,
-    standardOverrides: null,
+    overrides: null,
     type: createFieldInput.type,
     universalIdentifier: createFieldInput.universalIdentifier ?? v4(),
     options: createFieldInput.options ?? null,
@@ -54,7 +57,13 @@ export const getDefaultFlatFieldMetadata = ({
       : resolvedDefaultValue,
     createdAt,
     updatedAt: createdAt,
-    isUIReadOnly: createFieldInput.isUIReadOnly ?? false,
+    // isUIReadOnly is the deprecated alias of isUIEditable (inverted
+    // polarity), kept for one release; isUIEditable wins when both are set.
+    isUIEditable:
+      createFieldInput.isUIEditable ??
+      (isDefined(createFieldInput.isUIReadOnly)
+        ? !createFieldInput.isUIReadOnly
+        : true),
     morphId: null,
     applicationUniversalIdentifier: flatApplication.universalIdentifier,
     objectMetadataUniversalIdentifier,
@@ -68,5 +77,6 @@ export const getDefaultFlatFieldMetadata = ({
     mainGroupByFieldMetadataViewUniversalIdentifiers: [],
     universalSettings: settings ?? null,
     viewSortUniversalIdentifiers: [],
+    searchFieldMetadataUniversalIdentifiers: [],
   } as const satisfies UniversalFlatFieldMetadata;
 };

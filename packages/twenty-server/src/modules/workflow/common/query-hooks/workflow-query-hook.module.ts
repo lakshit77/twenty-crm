@@ -1,13 +1,10 @@
 import { Module } from '@nestjs/common';
 
-import { NestjsQueryTypeOrmModule } from '@ptc-org/nestjs-query-typeorm';
-
 import { CommandMenuItemModule } from 'src/engine/metadata-modules/command-menu-item/command-menu-item.module';
 import { FeatureFlagModule } from 'src/engine/core-modules/feature-flag/feature-flag.module';
 import { RecordPositionModule } from 'src/engine/core-modules/record-position/record-position.module';
 import { WorkspaceManyOrAllFlatEntityMapsCacheModule } from 'src/engine/metadata-modules/flat-entity/services/workspace-many-or-all-flat-entity-maps-cache.module';
 import { LogicFunctionModule } from 'src/engine/metadata-modules/logic-function/logic-function.module';
-import { ObjectMetadataEntity } from 'src/engine/metadata-modules/object-metadata/object-metadata.entity';
 import { ObjectMetadataModule } from 'src/engine/metadata-modules/object-metadata/object-metadata.module';
 import { CodeStepBuildModule } from 'src/modules/workflow/workflow-builder/workflow-version-step/code-step/code-step-build.module';
 import { WorkflowCreateManyPostQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-create-many.post-query.hook';
@@ -26,7 +23,9 @@ import { WorkflowRunDeleteManyPreQueryHook } from 'src/modules/workflow/common/q
 import { WorkflowRunDeleteOnePreQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-run-delete-one.pre-query.hook';
 import { WorkflowRunUpdateManyPreQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-run-update-many.pre-query.hook';
 import { WorkflowRunUpdateOnePreQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-run-update-one.pre-query.hook';
+import { WorkflowUpdateManyPostQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-update-many.post-query.hook';
 import { WorkflowUpdateManyPreQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-update-many.pre-query.hook';
+import { WorkflowUpdateOnePostQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-update-one.post-query.hook';
 import { WorkflowUpdateOnePreQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-update-one.pre-query.hook';
 import { WorkflowVersionCreateManyPreQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-version-create-many.pre-query.hook';
 import { WorkflowVersionCreateOnePreQueryHook } from 'src/modules/workflow/common/query-hooks/workflow-version-create-one.pre-query.hook';
@@ -39,7 +38,6 @@ import { WorkflowVersionValidationWorkspaceService } from 'src/modules/workflow/
 
 @Module({
   imports: [
-    NestjsQueryTypeOrmModule.forFeature([ObjectMetadataEntity]),
     LogicFunctionModule,
     RecordPositionModule,
     WorkspaceManyOrAllFlatEntityMapsCacheModule,
@@ -53,6 +51,8 @@ import { WorkflowVersionValidationWorkspaceService } from 'src/modules/workflow/
     WorkflowCreateManyPreQueryHook,
     WorkflowUpdateOnePreQueryHook,
     WorkflowUpdateManyPreQueryHook,
+    WorkflowUpdateOnePostQueryHook,
+    WorkflowUpdateManyPostQueryHook,
     WorkflowRunCreateOnePreQueryHook,
     WorkflowRunCreateManyPreQueryHook,
     WorkflowRunUpdateOnePreQueryHook,

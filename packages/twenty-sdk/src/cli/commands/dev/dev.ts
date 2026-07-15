@@ -1,3 +1,5 @@
+import { ApiService } from '@/cli/utilities/api/api-service';
+import { promptForReauthentication } from '@/cli/utilities/auth/reauth-helper';
 import { ConfigService } from '@/cli/utilities/config/config-service';
 import { CURRENT_EXECUTION_DIRECTORY } from '@/cli/utilities/config/current-execution-directory';
 import { DevModeOrchestrator } from '@/cli/utilities/dev/orchestrator/dev-mode-orchestrator';
@@ -7,12 +9,14 @@ import { DevUiStateManager } from '@/cli/utilities/dev/ui/dev-ui-state-manager';
 import { checkSdkVersionCompatibility } from '@/cli/utilities/version/check-sdk-version-compatibility';
 import { checkServerVersionCompatibility } from '@/cli/utilities/version/check-server-version-compatibility';
 import { getVersionInfo } from '@/cli/utilities/version/get-version-info';
+import chalk from 'chalk';
 
 export type AppDevOptions = {
   appPath?: string;
   headless?: boolean;
   verbose?: boolean;
   debounceMs?: number;
+  force?: boolean;
 };
 
 export class AppDevCommand {
@@ -28,6 +32,15 @@ export class AppDevCommand {
     return this.orchestrator;
   }
 
+  private async ensureAuthenticatedBeforeLaunch(): Promise<void> {
+    const apiService = new ApiService({ disableInterceptors: true });
+    const { serverUp, authValid } = await apiService.validateAuth();
+
+    if (serverUp && !authValid) {
+      await promptForReauthentication(ConfigService.getActiveRemote());
+    }
+  }
+
   async execute(options: AppDevOptions): Promise<void> {
     const appPath = options.appPath ?? CURRENT_EXECUTION_DIRECTORY;
 
@@ -37,11 +50,10 @@ export class AppDevCommand {
       await checkServerVersionCompatibility();
     }
 
-    const config = await new ConfigService().getConfig();
+    await this.ensureAuthenticatedBeforeLaunch();
 
     const orchestratorState = new OrchestratorState({
       appPath,
-      frontendUrl: config.apiUrl,
     });
 
     if (!options.headless) {
@@ -49,7 +61,7 @@ export class AppDevCommand {
 
       orchestratorState.onChange = () => uiStateManager.notify();
 
-      const { unmount } = await renderDevUI(uiStateManager);
+      const { unmount } = await renderDevUI(uiStateManager, options.verbose);
 
       this.unmountUI = unmount;
 
@@ -62,6 +74,18 @@ export class AppDevCommand {
       state: orchestratorState,
       verbose: options.verbose,
       debounceMs: options.debounceMs,
+      force: options.force,
+      interactive: !options.headless && process.stdout.isTTY === true,
+      onExit: ({ code, message }) => {
+        if (options.headless) {
+          return;
+        }
+
+        void this.close().then(() => {
+          console.log(chalk.yellow(`\n${message}`));
+          process.exit(code);
+        });
+      },
     });
 
     await this.orchestrator.start();

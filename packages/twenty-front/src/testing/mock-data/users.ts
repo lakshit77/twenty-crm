@@ -1,10 +1,10 @@
+import { type CurrentUserWorkspace } from '@/auth/states/currentUserWorkspaceState';
+import { CUSTOM_WORKSPACE_APPLICATION_MOCK } from '@/object-metadata/hooks/__tests__/constants/CustomWorkspaceApplicationMock.test.constant';
+import { type WorkspaceMember } from '@/workspace-member/types/WorkspaceMember';
 import {
   AUTO_SELECT_FAST_MODEL_ID,
   AUTO_SELECT_SMART_MODEL_ID,
 } from 'twenty-shared/constants';
-import { type CurrentUserWorkspace } from '@/auth/states/currentUserWorkspaceState';
-import { CUSTOM_WORKSPACE_APPLICATION_MOCK } from '@/object-metadata/hooks/__tests__/constants/CustomWorkspaceApplicationMock.test.constant';
-import { type WorkspaceMember } from '@/workspace-member/types/WorkspaceMember';
 import {
   OnboardingStatus,
   PermissionFlagType,
@@ -13,6 +13,7 @@ import {
   type User,
   type Workspace,
   WorkspaceActivationStatus,
+  WorkspaceDiscoverability,
   WorkspaceMemberDateFormatEnum,
   WorkspaceMemberTimeFormatEnum,
 } from '~/generated-metadata/graphql';
@@ -68,9 +69,9 @@ export const mockCurrentWorkspace = {
   inviteHash: 'twenty.com-invite-hash',
   logo: workspaceLogoUrl,
   isPublicInviteLinkEnabled: true,
+  workspaceDiscoverability: WorkspaceDiscoverability.PUBLIC,
   allowImpersonation: true,
   activationStatus: WorkspaceActivationStatus.ACTIVE,
-  hasValidEnterpriseKey: false,
   hasValidSignedEnterpriseKey: false,
   hasValidEnterpriseValidityToken: false,
   isGoogleAuthEnabled: true,

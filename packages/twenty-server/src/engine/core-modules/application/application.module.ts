@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { ApplicationRegistrationEntity } from 'src/engine/core-modules/application/application-registration/application-registration.entity';
 import { ApplicationEntity } from 'src/engine/core-modules/application/application.entity';
 import { ApplicationService } from 'src/engine/core-modules/application/application.service';
 import { WorkspaceFlatApplicationMapCacheService } from 'src/engine/core-modules/application/workspace-flat-application-map-cache.service';
@@ -14,12 +15,14 @@ import { WorkspaceManyOrAllFlatEntityMapsCacheModule } from 'src/engine/metadata
 import { FrontComponentEntity } from 'src/engine/metadata-modules/front-component/entities/front-component.entity';
 import { LogicFunctionEntity } from 'src/engine/metadata-modules/logic-function/logic-function.entity';
 import { ObjectMetadataEntity } from 'src/engine/metadata-modules/object-metadata/object-metadata.entity';
+import { provideWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/provide-workspace-scoped-repository';
 import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
       ApplicationEntity,
+      ApplicationRegistrationEntity,
       WorkspaceEntity,
       LogicFunctionEntity,
       AgentEntity,
@@ -34,6 +37,11 @@ import { WorkspaceCacheModule } from 'src/engine/workspace-cache/workspace-cache
     FeatureFlagModule,
   ],
   exports: [ApplicationService, WorkspaceFlatApplicationMapCacheService],
-  providers: [ApplicationService, WorkspaceFlatApplicationMapCacheService],
+  providers: [
+    ApplicationService,
+    WorkspaceFlatApplicationMapCacheService,
+    provideWorkspaceScopedRepository(AgentEntity),
+    provideWorkspaceScopedRepository(CommandMenuItemEntity),
+  ],
 })
 export class ApplicationModule {}

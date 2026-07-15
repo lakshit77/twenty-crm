@@ -1,24 +1,43 @@
 import { Logger } from '@nestjs/common';
 
 import {
+  AlreadyExistsException,
   CreateEmailIdentityCommand,
   CreateTenantCommand,
   CreateTenantResourceAssociationCommand,
+  DeleteConfigurationSetCommand,
+  DeleteEmailIdentityCommand,
+  DeleteTenantCommand,
+  DeleteTenantResourceAssociationCommand,
   GetEmailIdentityCommand,
+  NotFoundException,
   PutEmailIdentityDkimAttributesCommand,
 } from '@aws-sdk/client-sesv2';
 
+import { isNonEmptyString } from '@sniptt/guards';
+
 import { type AwsSesDriverConfig } from 'src/engine/core-modules/emailing-domain/drivers/interfaces/driver-config.interface';
 import {
-  type DomainStatusInput,
-  type DomainVerificationInput,
   type EmailingDomainDriverInterface,
+  type EmailingDomainResourceInput,
   type EmailingDomainVerificationResult,
 } from 'src/engine/core-modules/emailing-domain/drivers/interfaces/emailing-domain-driver.interface';
+import {
+  EmailingDomainDriverException,
+  EmailingDomainDriverExceptionCode,
+} from 'src/engine/core-modules/emailing-domain/drivers/exceptions/emailing-domain-driver.exception';
+import { type EmailingDomainSendEmailRequest } from 'src/engine/core-modules/emailing-domain/drivers/types/emailing-domain-send-email-input.type';
+import { type EmailingDomainSendEmailResult } from 'src/engine/core-modules/emailing-domain/drivers/types/emailing-domain-send-email-result.type';
+import { UnsubscribeHostnameStatus } from 'src/engine/core-modules/emailing-domain/drivers/types/unsubscribe-hostname-status.type';
+import { type EmailingDomainEntity } from 'src/engine/core-modules/emailing-domain/emailing-domain.entity';
+import { type UnsubscribeContentService } from 'src/engine/core-modules/emailing-domain/services/unsubscribe-content.service';
 
+import { AWS_SES_RESOURCE_NAME_PREFIX } from 'src/engine/core-modules/emailing-domain/drivers/aws-ses/constants/aws-ses-resource-name-prefix.constant';
 import { type AwsSesClientProvider } from 'src/engine/core-modules/emailing-domain/drivers/aws-ses/providers/aws-ses-client.provider';
+import { AwsSesRegisterDomainService } from 'src/engine/core-modules/emailing-domain/drivers/aws-ses/services/aws-ses-register-domain.service';
 import { type AwsSesHandleErrorService } from 'src/engine/core-modules/emailing-domain/drivers/aws-ses/services/aws-ses-handle-error.service';
-import { EmailingDomainStatus } from 'src/engine/core-modules/emailing-domain/drivers/types/emailing-domain';
+import { type AwsSesSendEmailService } from 'src/engine/core-modules/emailing-domain/drivers/aws-ses/services/aws-ses-send-email.service';
+import { EmailingDomainStatus } from 'src/engine/core-modules/emailing-domain/drivers/types/emailing-domain-status.type';
 import { type VerificationRecordDTO } from 'src/engine/core-modules/emailing-domain/dtos/verification-record.dto';
 
 export class AwsSesDriver implements EmailingDomainDriverInterface {
@@ -28,17 +47,18 @@ export class AwsSesDriver implements EmailingDomainDriverInterface {
     private readonly config: AwsSesDriverConfig,
     private readonly awsSesClientProvider: AwsSesClientProvider,
     private readonly awsSesHandleErrorService: AwsSesHandleErrorService,
+    private readonly awsSesRegisterDomainService: AwsSesRegisterDomainService,
+    private readonly awsSesSendEmailService: AwsSesSendEmailService,
+    private readonly unsubscribeContentService: UnsubscribeContentService,
   ) {}
 
   async verifyDomain(
-    input: DomainVerificationInput,
+    input: EmailingDomainResourceInput,
   ): Promise<EmailingDomainVerificationResult> {
     try {
       this.logger.log(`Starting domain verification for: ${input.domain}`);
 
-      const tenantName = this.generateTenantName(input.workspaceId);
-
-      await this.ensureTenantExists(tenantName);
+      const tenantName = this.buildTenantName(input.workspaceId);
 
       const { isVerified, verificationRecords } =
         await this.createOrUpdateEmailIdentity(input.domain, tenantName);
@@ -51,7 +71,6 @@ export class AwsSesDriver implements EmailingDomainDriverInterface {
         status: isVerified
           ? EmailingDomainStatus.VERIFIED
           : EmailingDomainStatus.PENDING,
-        verifiedAt: isVerified ? new Date() : null,
         verificationRecords,
       };
     } catch (error) {
@@ -61,7 +80,7 @@ export class AwsSesDriver implements EmailingDomainDriverInterface {
   }
 
   async getDomainStatus(
-    input: DomainStatusInput,
+    input: EmailingDomainResourceInput,
   ): Promise<EmailingDomainVerificationResult> {
     try {
       this.logger.log(`Getting domain status for: ${input.domain}`);
@@ -75,7 +94,6 @@ export class AwsSesDriver implements EmailingDomainDriverInterface {
       const identityResponse = await sesClient.send(getIdentityCommand);
 
       const status = this.determineVerificationStatus(identityResponse);
-      const isFullyVerified = status === EmailingDomainStatus.VERIFIED;
       const verificationRecords = this.buildVerificationRecords(
         input.domain,
         identityResponse.DkimAttributes?.Tokens || [],
@@ -83,14 +101,12 @@ export class AwsSesDriver implements EmailingDomainDriverInterface {
 
       return {
         status,
-        verifiedAt: isFullyVerified ? new Date() : null,
         verificationRecords,
       };
     } catch (error) {
-      if (error.name === 'NotFoundException') {
+      if (error instanceof NotFoundException) {
         return {
           status: EmailingDomainStatus.FAILED,
-          verifiedAt: null,
           verificationRecords: [],
         };
       }
@@ -102,8 +118,117 @@ export class AwsSesDriver implements EmailingDomainDriverInterface {
     }
   }
 
-  private generateTenantName(workspaceId: string): string {
-    return `twenty-workspace-${workspaceId}`;
+  async provisionWorkspace(workspaceId: string): Promise<void> {
+    const tenantName = this.buildTenantName(workspaceId);
+
+    await this.ensureTenantExists(tenantName);
+
+    await this.awsSesRegisterDomainService.provisionWorkspaceResources(
+      {
+        tenantName,
+        configurationSetName: this.buildConfigurationSetName(workspaceId),
+      },
+      this.config,
+    );
+  }
+
+  async registerDomain(input: EmailingDomainResourceInput): Promise<void> {
+    await this.awsSesRegisterDomainService.registerDomain(input.domain);
+  }
+
+  async sendEmail(
+    input: EmailingDomainSendEmailRequest,
+  ): Promise<EmailingDomainSendEmailResult> {
+    const unsubscribeBaseUrl = this.getUnsubscribeBaseUrl(input.emailingDomain);
+    const emailToSend = this.unsubscribeContentService.addTo(
+      input,
+      unsubscribeBaseUrl,
+    );
+
+    return this.awsSesSendEmailService.sendEmail(emailToSend, {
+      tenantName: this.buildTenantName(input.workspaceId),
+      configurationSetName: this.buildConfigurationSetName(input.workspaceId),
+    });
+  }
+
+  private getUnsubscribeBaseUrl(emailingDomain: EmailingDomainEntity): string {
+    if (
+      emailingDomain.unsubscribeHostnameStatus !==
+        UnsubscribeHostnameStatus.ACTIVE ||
+      !isNonEmptyString(emailingDomain.unsubscribeHostname)
+    ) {
+      throw new EmailingDomainDriverException(
+        `Cannot send email for ${emailingDomain.domain}: unsubscribe domain is not active (status: ${emailingDomain.unsubscribeHostnameStatus})`,
+        EmailingDomainDriverExceptionCode.UNSUBSCRIBE_NOT_READY,
+      );
+    }
+
+    return `https://${emailingDomain.unsubscribeHostname}`;
+  }
+
+  async cleanupDomain(input: EmailingDomainResourceInput): Promise<void> {
+    const sesClient = this.awsSesClientProvider.getSESClient();
+    const tenantName = this.buildTenantName(input.workspaceId);
+    const identityArn = `arn:aws:ses:${this.config.region}:${this.config.accountId}:identity/${input.domain}`;
+
+    await sesClient
+      .send(
+        new DeleteTenantResourceAssociationCommand({
+          TenantName: tenantName,
+          ResourceArn: identityArn,
+        }),
+      )
+      .catch((error) => {
+        if (!(error instanceof NotFoundException)) throw error;
+      });
+
+    await sesClient
+      .send(new DeleteEmailIdentityCommand({ EmailIdentity: input.domain }))
+      .catch((error) => {
+        if (!(error instanceof NotFoundException)) throw error;
+      });
+  }
+
+  async deprovisionWorkspace(workspaceId: string): Promise<void> {
+    const sesClient = this.awsSesClientProvider.getSESClient();
+    const tenantName = this.buildTenantName(workspaceId);
+    const configurationSetName = this.buildConfigurationSetName(workspaceId);
+    const configurationSetArn = `arn:aws:ses:${this.config.region}:${this.config.accountId}:configuration-set/${configurationSetName}`;
+
+    await sesClient
+      .send(
+        new DeleteTenantResourceAssociationCommand({
+          TenantName: tenantName,
+          ResourceArn: configurationSetArn,
+        }),
+      )
+      .catch((error) => {
+        if (!(error instanceof NotFoundException)) throw error;
+      });
+
+    await sesClient
+      .send(
+        new DeleteConfigurationSetCommand({
+          ConfigurationSetName: configurationSetName,
+        }),
+      )
+      .catch((error) => {
+        if (!(error instanceof NotFoundException)) throw error;
+      });
+
+    await sesClient
+      .send(new DeleteTenantCommand({ TenantName: tenantName }))
+      .catch((error) => {
+        if (!(error instanceof NotFoundException)) throw error;
+      });
+  }
+
+  private buildTenantName(workspaceId: string): string {
+    return `${AWS_SES_RESOURCE_NAME_PREFIX}-${workspaceId}`;
+  }
+
+  private buildConfigurationSetName(workspaceId: string): string {
+    return `${AWS_SES_RESOURCE_NAME_PREFIX}-${workspaceId}`;
   }
 
   private async ensureTenantExists(tenantName: string): Promise<void> {
@@ -113,7 +238,7 @@ export class AwsSesDriver implements EmailingDomainDriverInterface {
       await sesClient.send(new CreateTenantCommand({ TenantName: tenantName }));
       this.logger.log(`Created tenant: ${tenantName}`);
     } catch (error) {
-      if (error.name === 'AlreadyExistsException') {
+      if (error instanceof AlreadyExistsException) {
         this.logger.log(`Tenant already exists: ${tenantName}`);
 
         return;
@@ -143,13 +268,11 @@ export class AwsSesDriver implements EmailingDomainDriverInterface {
         existingIdentity.DkimAttributes?.Tokens || [],
       );
 
-      if (!isVerified) {
-        await this.associateResourceWithTenant(domain, tenantName);
-      }
+      await this.associateResourceWithTenant(domain, tenantName);
 
       return { isVerified, verificationRecords };
     } catch (error) {
-      if (error.name === 'NotFoundException') {
+      if (error instanceof NotFoundException) {
         return await this.createNewEmailIdentity(domain, tenantName);
       }
       throw error;
@@ -201,7 +324,7 @@ export class AwsSesDriver implements EmailingDomainDriverInterface {
       );
       this.logger.log(`Associated domain ${domain} with tenant ${tenantName}`);
     } catch (error) {
-      if (error.name === 'AlreadyExistsException') {
+      if (error instanceof AlreadyExistsException) {
         this.logger.log(
           `Domain ${domain} already associated with tenant ${tenantName}`,
         );

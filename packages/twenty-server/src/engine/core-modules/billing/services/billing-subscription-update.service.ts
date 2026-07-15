@@ -20,6 +20,7 @@ import { BillingSubscriptionEntity } from 'src/engine/core-modules/billing/entit
 import { BillingPlanKey } from 'src/engine/core-modules/billing/enums/billing-plan-key.enum';
 import { BillingProductKey } from 'src/engine/core-modules/billing/enums/billing-product-key.enum';
 import { SubscriptionInterval } from 'src/engine/core-modules/billing/enums/billing-subscription-interval.enum';
+import { SubscriptionStatus } from 'src/engine/core-modules/billing/enums/billing-subscription-status.enum';
 import { BillingPriceService } from 'src/engine/core-modules/billing/services/billing-price.service';
 import { BillingProductService } from 'src/engine/core-modules/billing/services/billing-product.service';
 import { BillingSubscriptionPhaseService } from 'src/engine/core-modules/billing/services/billing-subscription-phase.service';
@@ -37,7 +38,8 @@ import { getCurrentLicensedBillingSubscriptionItemOrThrow } from 'src/engine/cor
 import { getCurrentResourceCreditSubscriptionItemOrThrow } from 'src/engine/core-modules/billing/utils/get-resource-credit-subscription-item-or-throw.util';
 import { normalizePriceRef } from 'src/engine/core-modules/billing/utils/normalize-price-ref.utils';
 import { type WorkspaceEntity } from 'src/engine/core-modules/workspace/workspace.entity';
-
+import { InjectWorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/inject-workspace-scoped-repository.decorator';
+import { WorkspaceScopedRepository } from 'src/engine/twenty-orm/workspace-scoped-repository/workspace-scoped-repository';
 export type SubscriptionStripePrices = {
   licensedPriceId: string;
   seats: number;
@@ -57,8 +59,8 @@ export class BillingSubscriptionUpdateService {
     private readonly billingPriceRepository: Repository<BillingPriceEntity>,
     @InjectRepository(BillingSubscriptionItemEntity)
     private readonly billingSubscriptionItemRepository: Repository<BillingSubscriptionItemEntity>,
-    @InjectRepository(BillingSubscriptionEntity)
-    private readonly billingSubscriptionRepository: Repository<BillingSubscriptionEntity>,
+    @InjectWorkspaceScopedRepository(BillingSubscriptionEntity)
+    private readonly billingSubscriptionRepository: WorkspaceScopedRepository<BillingSubscriptionEntity>,
     private readonly stripeSubscriptionScheduleService: StripeSubscriptionScheduleService,
     private readonly billingSubscriptionPhaseService: BillingSubscriptionPhaseService,
     private readonly billingSubscriptionService: BillingSubscriptionService,
@@ -77,7 +79,11 @@ export class BillingSubscriptionUpdateService {
       newResourceCreditPriceId: resourceCreditPriceId,
     } as const;
 
-    await this.updateSubscription(billingSubscription.id, subscriptionUpdate);
+    await this.updateSubscription(
+      workspaceId,
+      billingSubscription.id,
+      subscriptionUpdate,
+    );
   }
 
   async cancelSwitchResourceCreditPrice(
@@ -95,7 +101,11 @@ export class BillingSubscriptionUpdateService {
       newResourceCreditPriceId: currentResourceCreditPrice.stripePriceId,
     } as const;
 
-    await this.updateSubscription(billingSubscription.id, subscriptionUpdate);
+    await this.updateSubscription(
+      workspace.id,
+      billingSubscription.id,
+      subscriptionUpdate,
+    );
   }
 
   async cancelSwitchPlan(workspaceId: string) {
@@ -108,7 +118,7 @@ export class BillingSubscriptionUpdateService {
       getCurrentLicensedBillingSubscriptionItemOrThrow(billingSubscription)
         .billingProduct?.metadata.planKey;
 
-    await this.updateSubscription(billingSubscription.id, {
+    await this.updateSubscription(workspaceId, billingSubscription.id, {
       type: SubscriptionUpdateType.PLAN,
       newPlan: currentPlan,
     });
@@ -122,7 +132,7 @@ export class BillingSubscriptionUpdateService {
 
     const currentInterval = billingSubscription.interval;
 
-    await this.updateSubscription(billingSubscription.id, {
+    await this.updateSubscription(workspaceId, billingSubscription.id, {
       type: SubscriptionUpdateType.INTERVAL,
       newInterval: currentInterval,
     });
@@ -136,7 +146,7 @@ export class BillingSubscriptionUpdateService {
 
     const currentInterval = billingSubscription.interval;
 
-    await this.updateSubscription(billingSubscription.id, {
+    await this.updateSubscription(workspaceId, billingSubscription.id, {
       type: SubscriptionUpdateType.INTERVAL,
       newInterval:
         currentInterval === SubscriptionInterval.Month
@@ -155,7 +165,7 @@ export class BillingSubscriptionUpdateService {
       getCurrentLicensedBillingSubscriptionItemOrThrow(billingSubscription)
         .billingProduct?.metadata.planKey;
 
-    await this.updateSubscription(billingSubscription.id, {
+    await this.updateSubscription(workspaceId, billingSubscription.id, {
       type: SubscriptionUpdateType.PLAN,
       newPlan:
         currentPlan === BillingPlanKey.ENTERPRISE
@@ -170,17 +180,19 @@ export class BillingSubscriptionUpdateService {
         { workspaceId },
       );
 
-    await this.updateSubscription(billingSubscription.id, {
+    await this.updateSubscription(workspaceId, billingSubscription.id, {
       type: SubscriptionUpdateType.SEATS,
       newSeats,
     });
   }
 
   async updateSubscription(
+    workspaceId: string,
     subscriptionId: string,
     subscriptionUpdate: SubscriptionUpdate,
   ): Promise<void> {
     const subscription = await this.billingSubscriptionRepository.findOneOrFail(
+      workspaceId,
       {
         where: { id: subscriptionId },
         relations: [
@@ -259,8 +271,13 @@ export class BillingSubscriptionUpdateService {
         });
       }
     } else {
-      const subscriptionOptions =
-        computeSubscriptionUpdateOptions(subscriptionUpdate);
+      const subscriptionOptions = computeSubscriptionUpdateOptions(
+        subscriptionUpdate,
+        {
+          currentSeats: licensedItem.quantity,
+          isTrialing: subscription.status === SubscriptionStatus.Trialing,
+        },
+      );
 
       if (
         subscriptionUpdate.type === SubscriptionUpdateType.RESOURCE_CREDIT_PRICE
@@ -512,6 +529,14 @@ export class BillingSubscriptionUpdateService {
     subscription: BillingSubscriptionEntity,
     update: SubscriptionUpdate,
   ): Promise<boolean> {
+    if (
+      subscription.status === SubscriptionStatus.Trialing &&
+      (update.type === SubscriptionUpdateType.INTERVAL ||
+        update.type === SubscriptionUpdateType.PLAN)
+    ) {
+      return false;
+    }
+
     switch (update.type) {
       case SubscriptionUpdateType.PLAN: {
         const currentPlan =

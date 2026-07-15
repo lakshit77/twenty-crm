@@ -22,13 +22,13 @@ const PARTIAL_ID_FIELD = {
   isNullable: false,
   isUnique: true,
   isActive: true,
-  isCustom: false,
   isSystem: true,
-  isUIReadOnly: true,
+  isSystemSideEffect: true,
+  isUIEditable: false,
   isLabelSyncedWithName: false,
   defaultValue: 'uuid',
   options: null,
-  standardOverrides: null,
+  overrides: null,
   morphId: null,
   universalSettings: null,
   relationTargetObjectMetadataUniversalIdentifier: null,
@@ -40,6 +40,7 @@ const PARTIAL_ID_FIELD = {
   mainGroupByFieldMetadataViewUniversalIdentifiers: [],
   fieldPermissionUniversalIdentifiers: [],
   viewSortUniversalIdentifiers: [],
+  searchFieldMetadataUniversalIdentifiers: [],
 } as const satisfies PartialSystemFlatFieldMetadata<FieldMetadataType.UUID>;
 
 const PARTIAL_CREATED_AT_FIELD = {
@@ -51,13 +52,13 @@ const PARTIAL_CREATED_AT_FIELD = {
   isNullable: false,
   isUnique: false,
   isActive: true,
-  isCustom: false,
   isSystem: true,
-  isUIReadOnly: true,
+  isSystemSideEffect: true,
+  isUIEditable: false,
   isLabelSyncedWithName: false,
   defaultValue: 'now',
   options: null,
-  standardOverrides: null,
+  overrides: null,
   morphId: null,
   universalSettings: null,
   relationTargetObjectMetadataUniversalIdentifier: null,
@@ -69,6 +70,7 @@ const PARTIAL_CREATED_AT_FIELD = {
   mainGroupByFieldMetadataViewUniversalIdentifiers: [],
   fieldPermissionUniversalIdentifiers: [],
   viewSortUniversalIdentifiers: [],
+  searchFieldMetadataUniversalIdentifiers: [],
 } as const satisfies PartialSystemFlatFieldMetadata<FieldMetadataType.DATE_TIME>;
 
 const PARTIAL_UPDATED_AT_FIELD = {
@@ -80,13 +82,13 @@ const PARTIAL_UPDATED_AT_FIELD = {
   isNullable: false,
   isUnique: false,
   isActive: true,
-  isCustom: false,
   isSystem: true,
-  isUIReadOnly: true,
+  isSystemSideEffect: true,
+  isUIEditable: false,
   isLabelSyncedWithName: false,
   defaultValue: 'now',
   options: null,
-  standardOverrides: null,
+  overrides: null,
   morphId: null,
   universalSettings: null,
   relationTargetObjectMetadataUniversalIdentifier: null,
@@ -98,6 +100,7 @@ const PARTIAL_UPDATED_AT_FIELD = {
   mainGroupByFieldMetadataViewUniversalIdentifiers: [],
   fieldPermissionUniversalIdentifiers: [],
   viewSortUniversalIdentifiers: [],
+  searchFieldMetadataUniversalIdentifiers: [],
 } as const satisfies PartialSystemFlatFieldMetadata<FieldMetadataType.DATE_TIME>;
 
 const PARTIAL_DELETED_AT_FIELD = {
@@ -109,13 +112,13 @@ const PARTIAL_DELETED_AT_FIELD = {
   isNullable: true,
   isUnique: false,
   isActive: true,
-  isCustom: false,
   isSystem: true,
-  isUIReadOnly: true,
+  isSystemSideEffect: true,
+  isUIEditable: false,
   isLabelSyncedWithName: false,
   defaultValue: null,
   options: null,
-  standardOverrides: null,
+  overrides: null,
   morphId: null,
   universalSettings: null,
   relationTargetObjectMetadataUniversalIdentifier: null,
@@ -127,6 +130,7 @@ const PARTIAL_DELETED_AT_FIELD = {
   mainGroupByFieldMetadataViewUniversalIdentifiers: [],
   fieldPermissionUniversalIdentifiers: [],
   viewSortUniversalIdentifiers: [],
+  searchFieldMetadataUniversalIdentifiers: [],
 } as const satisfies PartialSystemFlatFieldMetadata<FieldMetadataType.DATE_TIME>;
 
 const PARTIAL_CREATED_BY_FIELD = {
@@ -138,13 +142,13 @@ const PARTIAL_CREATED_BY_FIELD = {
   isNullable: false,
   isUnique: false,
   isActive: true,
-  isCustom: false,
   isSystem: true,
-  isUIReadOnly: true,
+  isSystemSideEffect: true,
+  isUIEditable: false,
   isLabelSyncedWithName: false,
   defaultValue: { name: "''", source: "'MANUAL'" },
   options: null,
-  standardOverrides: null,
+  overrides: null,
   morphId: null,
   universalSettings: null,
   relationTargetObjectMetadataUniversalIdentifier: null,
@@ -156,6 +160,7 @@ const PARTIAL_CREATED_BY_FIELD = {
   mainGroupByFieldMetadataViewUniversalIdentifiers: [],
   fieldPermissionUniversalIdentifiers: [],
   viewSortUniversalIdentifiers: [],
+  searchFieldMetadataUniversalIdentifiers: [],
 } as const satisfies PartialSystemFlatFieldMetadata<FieldMetadataType.ACTOR>;
 
 const PARTIAL_UPDATED_BY_FIELD = {
@@ -167,13 +172,13 @@ const PARTIAL_UPDATED_BY_FIELD = {
   isNullable: false,
   isUnique: false,
   isActive: true,
-  isCustom: false,
   isSystem: true,
-  isUIReadOnly: true,
+  isSystemSideEffect: true,
+  isUIEditable: false,
   isLabelSyncedWithName: false,
   defaultValue: { name: "''", source: "'MANUAL'" },
   options: null,
-  standardOverrides: null,
+  overrides: null,
   morphId: null,
   universalSettings: null,
   relationTargetObjectMetadataUniversalIdentifier: null,
@@ -185,6 +190,7 @@ const PARTIAL_UPDATED_BY_FIELD = {
   mainGroupByFieldMetadataViewUniversalIdentifiers: [],
   fieldPermissionUniversalIdentifiers: [],
   viewSortUniversalIdentifiers: [],
+  searchFieldMetadataUniversalIdentifiers: [],
 } as const satisfies PartialSystemFlatFieldMetadata<FieldMetadataType.ACTOR>;
 
 const PARTIAL_POSITION_FIELD = {
@@ -196,13 +202,13 @@ const PARTIAL_POSITION_FIELD = {
   isNullable: false,
   isUnique: false,
   isActive: true,
-  isCustom: false,
   isSystem: true,
-  isUIReadOnly: true,
+  isSystemSideEffect: true,
+  isUIEditable: false,
   isLabelSyncedWithName: false,
   defaultValue: 0,
   options: null,
-  standardOverrides: null,
+  overrides: null,
   morphId: null,
   universalSettings: null,
   relationTargetObjectMetadataUniversalIdentifier: null,
@@ -214,6 +220,7 @@ const PARTIAL_POSITION_FIELD = {
   mainGroupByFieldMetadataViewUniversalIdentifiers: [],
   fieldPermissionUniversalIdentifiers: [],
   viewSortUniversalIdentifiers: [],
+  searchFieldMetadataUniversalIdentifiers: [],
 } as const satisfies PartialSystemFlatFieldMetadata<FieldMetadataType.POSITION>;
 
 const PARTIAL_SEARCH_VECTOR_FIELD = {
@@ -225,13 +232,13 @@ const PARTIAL_SEARCH_VECTOR_FIELD = {
   isNullable: true,
   isUnique: false,
   isActive: true,
-  isCustom: false,
   isSystem: true,
-  isUIReadOnly: true,
+  isSystemSideEffect: true,
+  isUIEditable: false,
   isLabelSyncedWithName: false,
   defaultValue: null,
   options: null,
-  standardOverrides: null,
+  overrides: null,
   morphId: null,
   // universalSettings for searchVector is computed at runtime
   // based on the name field (getTsVectorColumnExpressionFromFields)
@@ -245,6 +252,7 @@ const PARTIAL_SEARCH_VECTOR_FIELD = {
   mainGroupByFieldMetadataViewUniversalIdentifiers: [],
   fieldPermissionUniversalIdentifiers: [],
   viewSortUniversalIdentifiers: [],
+  searchFieldMetadataUniversalIdentifiers: [],
 } as const satisfies PartialSystemFlatFieldMetadata<FieldMetadataType.TS_VECTOR>;
 
 export const PARTIAL_SYSTEM_FLAT_FIELD_METADATAS = {
