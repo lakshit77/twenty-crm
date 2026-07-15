@@ -6,6 +6,8 @@
 **/**/node_modules/
 .cache
 .ssh
+new.ssh
+packages/twenty-docker/.env.vps-backup
 
 # yarn is the recommended package manager across the project
 **/**/.package-lock.json

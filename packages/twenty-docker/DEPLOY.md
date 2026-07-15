@@ -11,12 +11,10 @@ Read it fully before changing VPS, DNS, or compose files.
 | **Postgres** | Supabase (external, `PG_DATABASE_URL`) |
 | **Files** | Cloudflare R2 (`STORAGE_TYPE=S_3`, `STORAGE_S3_*`) |
 | **Redis** | Container on VPS (`REDIS_URL=redis://redis:6379`) |
-| **HTTPS / 80–443** | **Existing Traefik** on VPS (`/root/docker-compose.yml`, n8n template) |
-| **n8n** | Same VPS, separate stack under `/root` — do not stop unless asked |
+| **HTTPS / 80–443** | **Traefik** bundled in `docker-compose.prod.standalone.yml` on the dedicated VPS |
+| **n8n** | Separate VPS (`194.238.18.193`, `/root`) — not co-located with Twenty |
 
-**Do not use Caddy** on this VPS: Traefik already binds ports 80 and 443.
-
-**Do not clone the full monorepo on the VPS.** Only copy `docker-compose.prod.yml` and `.env` to `~/twenty-crm/`.
+**Do not clone the full monorepo on the VPS.** Copy `docker-compose.prod.standalone.yml` and `.env` to `~/twenty-crm/`.
 
 Public URL: **https://crm.lakshitukani.com**
 
@@ -28,11 +26,12 @@ Public URL: **https://crm.lakshitukani.com**
 | ---- | ----- |
 | GitHub repo | `lakshit77/twenty-crm` |
 | GHCR image | `ghcr.io/lakshit77/twenty-crm:latest` |
-| VPS SSH | `root@194.238.18.193` (hostname `srv894857.hstgr.cloud`) |
+| VPS SSH | `root@89.116.20.227` (hostname `srv1511866.hstgr.cloud`, Mumbai) |
 | VPS deploy path | `~/twenty-crm/` |
-| DNS | GoDaddy A record: `crm` → `194.238.18.193` |
-| Traefik cert resolver | `mytlschallenge` (must match `/root/docker-compose.yml`) |
-| Local SSH key (gitignored) | `twenty-crm/.ssh/id_ed25519` |
+| DNS | GoDaddy A record: `crm` → `89.116.20.227` |
+| Compose file | `docker-compose.prod.standalone.yml` (Traefik + app on one stack) |
+| Local SSH key (gitignored) | `twenty-crm/new.ssh/id_ed25519` |
+| n8n VPS (unchanged) | `root@194.238.18.193` (`srv894857.hstgr.cloud`) — key: `.ssh/id_ed25519` |
 
 ---
 
@@ -44,19 +43,19 @@ Public URL: **https://crm.lakshitukani.com**
 2. Run:
 
 ```bash
-ssh -i /Users/lakshitukani/Lakshit/coding/twenty-crm/.ssh/id_ed25519 root@194.238.18.193
+ssh -i /Users/lakshitukani/Lakshit/coding/twenty-crm/new.ssh/id_ed25519 root@89.116.20.227
 ```
 
 3. First connection: type `yes` if asked to trust the host.
-4. You should see a prompt like `root@srv894857:~#` — you are on the VPS.
+4. You should see a prompt like `root@srv1511866:~#` — you are on the VPS.
 
 **Tip:** Add this to `~/.ssh/config` on your Mac for a short alias:
 
 ```
 Host twenty-vps
-  HostName 194.238.18.193
+  HostName 89.116.20.227
   User root
-  IdentityFile /Users/lakshitukani/Lakshit/coding/twenty-crm/.ssh/id_ed25519
+  IdentityFile /Users/lakshitukani/Lakshit/coding/twenty-crm/new.ssh/id_ed25519
 ```
 
 Then connect with:
@@ -67,7 +66,7 @@ ssh twenty-vps
 
 ### Option B — Hostinger panel (browser terminal)
 
-1. Log in to **Hostinger** → **VPS** → your server (`srv894857`).
+1. Log in to **Hostinger** → **VPS** → your server (`srv1511866`, Mumbai).
 2. Open **Browser terminal** / **SSH terminal** in the panel.
 3. You are already logged in as `root` — no key file needed on your Mac.
 
@@ -75,8 +74,8 @@ ssh twenty-vps
 
 | Error | Fix |
 | ----- | --- |
-| `Permission denied (publickey)` | In Hostinger → VPS → **SSH keys**, add the contents of `.ssh/id_ed25519.pub` from this repo |
-| `Connection timed out` | Check VPS is running; confirm IP is still `194.238.18.193` in the panel |
+| `Permission denied (publickey)` | In Hostinger → VPS → **SSH keys**, add `new.ssh/id_ed25519.pub` |
+| `Connection timed out` | Check VPS is running; confirm IP is still `89.116.20.227` in the panel |
 | `No such file` for key | Use the full path to `id_ed25519` as in the command above |
 
 ---
@@ -94,7 +93,7 @@ cd ~/twenty-crm
 ### Shorthand (optional, paste once per SSH session)
 
 ```bash
-alias tcrm='docker compose -f docker-compose.prod.yml'
+alias tcrm='docker compose -f docker-compose.prod.standalone.yml'
 ```
 
 After that you can use `tcrm` instead of the long `docker compose -f ...` command.
@@ -105,17 +104,17 @@ After that you can use `tcrm` instead of the long `docker compose -f ...` comman
 
 | What you want | Command (without alias) | With `tcrm` alias |
 | ------------- | ------------------------ | ------------------ |
-| **See if containers are running** | `docker compose -f docker-compose.prod.yml ps` | `tcrm ps` |
-| **Pull latest image from GHCR** (after GitHub build) | `docker compose -f docker-compose.prod.yml pull` | `tcrm pull` |
-| **Start / apply updates** | `docker compose -f docker-compose.prod.yml up -d` | `tcrm up -d` |
-| **Pull + restart** (typical deploy) | `docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d` | `tcrm pull && tcrm up -d` |
-| **Stop Twenty** | `docker compose -f docker-compose.prod.yml down` | `tcrm down` |
-| **Restart Twenty** | `docker compose -f docker-compose.prod.yml restart` | `tcrm restart` |
-| **Restart only the API** | `docker compose -f docker-compose.prod.yml restart server` | `tcrm restart server` |
-| **Restart only the worker** | `docker compose -f docker-compose.prod.yml restart worker` | `tcrm restart worker` |
-| **Follow server logs** (Ctrl+C to exit) | `docker compose -f docker-compose.prod.yml logs -f server` | `tcrm logs -f server` |
-| **Follow worker logs** | `docker compose -f docker-compose.prod.yml logs -f worker` | `tcrm logs -f worker` |
-| **Last 100 log lines (server)** | `docker compose -f docker-compose.prod.yml logs --tail=100 server` | `tcrm logs --tail=100 server` |
+| **See if containers are running** | `docker compose -f docker-compose.prod.standalone.yml ps` | `tcrm ps` |
+| **Pull latest image from GHCR** (after GitHub build) | `docker compose -f docker-compose.prod.standalone.yml pull` | `tcrm pull` |
+| **Start / apply updates** | `docker compose -f docker-compose.prod.standalone.yml up -d` | `tcrm up -d` |
+| **Pull + restart** (typical deploy) | `docker compose -f docker-compose.prod.standalone.yml pull && docker compose -f docker-compose.prod.standalone.yml up -d` | `tcrm pull && tcrm up -d` |
+| **Stop Twenty** | `docker compose -f docker-compose.prod.standalone.yml down` | `tcrm down` |
+| **Restart Twenty** | `docker compose -f docker-compose.prod.standalone.yml restart` | `tcrm restart` |
+| **Restart only the API** | `docker compose -f docker-compose.prod.standalone.yml restart server` | `tcrm restart server` |
+| **Restart only the worker** | `docker compose -f docker-compose.prod.standalone.yml restart worker` | `tcrm restart worker` |
+| **Follow server logs** (Ctrl+C to exit) | `docker compose -f docker-compose.prod.standalone.yml logs -f server` | `tcrm logs -f server` |
+| **Follow worker logs** | `docker compose -f docker-compose.prod.standalone.yml logs -f worker` | `tcrm logs -f worker` |
+| **Last 100 log lines (server)** | `docker compose -f docker-compose.prod.standalone.yml logs --tail=100 server` | `tcrm logs --tail=100 server` |
 
 ### Edit environment variables on the VPS
 
@@ -123,18 +122,18 @@ After that you can use `tcrm` instead of the long `docker compose -f ...` comman
 cd ~/twenty-crm
 nano .env
 # save: Ctrl+O, Enter, then Ctrl+X
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.standalone.yml up -d
 ```
 
 After changing `.env`, always run `up -d` again so containers pick up new values.
 
 ### HTTPS / certificate issues
 
-Traefik (not in `~/twenty-crm`) handles HTTPS for `crm.lakshitukani.com`:
+Traefik runs as `twenty-crm-traefik-1` in the same compose stack:
 
 ```bash
-docker restart root-traefik-1
-docker logs root-traefik-1 --tail=50
+docker restart twenty-crm-traefik-1
+docker logs twenty-crm-traefik-1 --tail=50
 ```
 
 ### Check disk and memory
@@ -145,11 +144,13 @@ free -h
 docker stats --no-stream
 ```
 
-### List all Docker containers on the VPS (Twenty + n8n + Traefik)
+### List all Docker containers on the VPS
 
 ```bash
 docker ps
 ```
+
+Expected: `twenty-crm-traefik-1`, `twenty-crm-server-1`, `twenty-crm-worker-1`, `twenty-crm-redis-1`.
 
 ### Open the app in your browser
 
@@ -159,10 +160,10 @@ docker ps
 
 ```bash
 cd ~/twenty-crm
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs --tail=30 server
+docker compose -f docker-compose.prod.standalone.yml pull
+docker compose -f docker-compose.prod.standalone.yml up -d
+docker compose -f docker-compose.prod.standalone.yml ps
+docker compose -f docker-compose.prod.standalone.yml logs --tail=30 server
 ```
 
 ---
@@ -172,8 +173,8 @@ docker compose -f docker-compose.prod.yml logs --tail=30 server
 You do not have to open an interactive SSH session. From your Mac:
 
 ```bash
-ssh -i /Users/lakshitukani/Lakshit/coding/twenty-crm/.ssh/id_ed25519 root@194.238.18.193 \
-  "cd ~/twenty-crm && docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d"
+ssh -i /Users/lakshitukani/Lakshit/coding/twenty-crm/new.ssh/id_ed25519 root@89.116.20.227 \
+  "cd ~/twenty-crm && docker compose -f docker-compose.prod.standalone.yml pull && docker compose -f docker-compose.prod.standalone.yml up -d"
 ```
 
 ---
@@ -224,13 +225,13 @@ If the workflow fails at “Set up job” with “unable to find version”, pin
 
 | Type | Name | Value |
 | ---- | ---- | ----- |
-| A | `crm` | `194.238.18.193` |
+| A | `crm` | `89.116.20.227` |
 
 Verify:
 
 ```bash
 dig +short crm.lakshitukani.com
-# must return 194.238.18.193
+# must return 89.116.20.227
 ```
 
 Traefik will request Let’s Encrypt only after DNS resolves.
@@ -243,8 +244,8 @@ Hostinger KVM (2 CPU, 8 GB RAM) with Ubuntu 24.04 + Docker is sufficient for low
 
 ```bash
 # From developer machine
-export SSH_KEY="/path/to/twenty-crm/.ssh/id_ed25519"
-export VPS="root@194.238.18.193"
+export SSH_KEY="/path/to/twenty-crm/new.ssh/id_ed25519"
+export VPS="root@89.116.20.227"
 
 ssh -i "$SSH_KEY" $VPS "docker compose version"
 ```
@@ -273,18 +274,18 @@ ssh -i "$SSH_KEY" $VPS "docker login ghcr.io -u lakshit77"
 
 Only two files are required in `~/twenty-crm/`:
 
-1. `docker-compose.prod.yml`
+1. `docker-compose.prod.standalone.yml`
 2. `.env` (production secrets)
 
 ```bash
-export SSH_KEY="/path/to/twenty-crm/.ssh/id_ed25519"
-export VPS="root@194.238.18.193"
+export SSH_KEY="/path/to/twenty-crm/new.ssh/id_ed25519"
+export VPS="root@89.116.20.227"
 DOCKER_DIR="/path/to/twenty-crm/packages/twenty-docker"
 
 ssh -i "$SSH_KEY" $VPS "mkdir -p ~/twenty-crm && chmod 700 ~/twenty-crm"
 
 scp -i "$SSH_KEY" \
-  "$DOCKER_DIR/docker-compose.prod.yml" \
+  "$DOCKER_DIR/docker-compose.prod.standalone.yml" \
   "$DOCKER_DIR/.env" \
   "$VPS:~/twenty-crm/"
 
@@ -302,33 +303,31 @@ ssh -i "$SSH_KEY" $VPS "rm -f ~/twenty-crm/Caddyfile ~/twenty-crm/docker-compose
 ## Phase 5 — Start the stack
 
 ```bash
-ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.yml pull"
-ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.yml up -d"
-ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.yml ps"
+ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.standalone.yml pull"
+ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.standalone.yml up -d"
+ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.standalone.yml ps"
 ```
 
 Wait until `server` is **healthy** (~3–10 min first run; runs DB upgrade against Supabase):
 
 ```bash
-ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.yml logs -f server"
+ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.standalone.yml logs -f server"
 ```
 
-Expected containers: `twenty-crm-server-1`, `twenty-crm-worker-1`, `twenty-crm-redis-1`.
+Expected containers: `twenty-crm-traefik-1`, `twenty-crm-server-1`, `twenty-crm-worker-1`, `twenty-crm-redis-1`.
 
 ---
 
 ## Phase 6 — Traefik and HTTPS
 
-Traefik runs as `root-traefik-1` from `/root/docker-compose.yml`. The Twenty `server` service uses Docker labels; Traefik discovers it via the Docker socket.
+Traefik is bundled in `docker-compose.prod.standalone.yml` as `twenty-crm-traefik-1`. It binds ports 80 and 443 and discovers the `server` container via Docker labels on the same compose network.
 
-**Docker network:** The `server` container must join **`root_default`** (the same network as `root-traefik-1` and `root-n8n-1`). `docker-compose.prod.yml` declares this as an external network. Without it, Traefik returns **504 Gateway Timeout** even when the server is healthy.
-
-**Multi-network pin (required):** The server also joins the internal `twenty-crm_default` network (Redis/worker). Traefik must use **`traefik.docker.network=root_default`** on the `server` labels so it always routes to the Traefik-facing IP. Without that label, an unrelated restart (e.g. n8n update) can make Traefik pick the internal IP — CRM **504s** while containers stay healthy. Updating n8n under `/root` should never require touching `~/twenty-crm`.
+Set `SSL_EMAIL` in `~/twenty-crm/.env` for Let's Encrypt (TLS-ALPN challenge).
 
 If HTTPS fails shortly after DNS goes live:
 
 ```bash
-ssh -i "$SSH_KEY" $VPS "docker restart root-traefik-1"
+ssh -i "$SSH_KEY" $VPS "docker restart twenty-crm-traefik-1"
 # wait 30–60s, then test
 curl -I https://crm.lakshitukani.com
 ```
@@ -336,14 +335,14 @@ curl -I https://crm.lakshitukani.com
 Common Traefik log errors:
 
 - **NXDOMAIN** — DNS not propagated yet; wait and restart Traefik.
-- **certificate resolver letsencrypt** — wrong resolver name; Twenty labels must use `mytlschallenge`.
+- **certificate resolver letsencrypt** — labels must use `mytlschallenge` (already set in standalone compose).
 
 ### Changing the public hostname
 
 1. Update GoDaddy DNS.
-2. Change `Host(\`...\`)` label in `docker-compose.prod.yml`.
+2. Change `Host(\`...\`)` label in `docker-compose.prod.standalone.yml`.
 3. Update `SERVER_URL` in VPS `.env`.
-4. `docker compose -f docker-compose.prod.yml up -d`.
+4. `docker compose -f docker-compose.prod.standalone.yml up -d`.
 
 ---
 
@@ -362,35 +361,27 @@ Common Traefik log errors:
 After a new image is pushed to GHCR, use the **User guide — commands on the VPS** section (`pull` + `up -d`), or from your Mac:
 
 ```bash
-ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d"
+ssh -i "$SSH_KEY" $VPS "cd ~/twenty-crm && docker compose -f docker-compose.prod.standalone.yml pull && docker compose -f docker-compose.prod.standalone.yml up -d"
 ```
 
 ---
 
-## Optional cleanup — duplicate stacks on the VPS
+## Optional cleanup — n8n VPS (`194.238.18.193`)
+
+Twenty CRM no longer runs on the n8n VPS. Only `root-n8n-1` and `root-traefik-1` should remain there.
 
 ### Old Hostinger Twenty stack (`twenty-dfxy-*`)
 
-An older compose project may still run as `twenty-dfxy-*` (local Postgres + `twentycrm/twenty`). It is **not** this deployment. Stop and remove it to free RAM:
+If an older compose project still runs as `twenty-dfxy-*` on the n8n VPS, stop and remove it to free RAM:
 
 ```bash
+export SSH_KEY="/path/to/twenty-crm/.ssh/id_ed25519"
+export VPS="root@194.238.18.193"
 ssh -i "$SSH_KEY" $VPS "
-  docker stop twenty-dfxy-twenty-1 twenty-dfxy-twenty-worker-1 twenty-dfxy-twenty-redis-1 twenty-dfxy-twenty-db-1
-  docker rm twenty-dfxy-twenty-1 twenty-dfxy-twenty-worker-1 twenty-dfxy-twenty-redis-1 twenty-dfxy-twenty-db-1
+  docker stop twenty-dfxy-twenty-1 twenty-dfxy-twenty-worker-1 twenty-dfxy-twenty-redis-1 twenty-dfxy-twenty-db-1 2>/dev/null
+  docker rm twenty-dfxy-twenty-1 twenty-dfxy-twenty-worker-1 twenty-dfxy-twenty-redis-1 twenty-dfxy-twenty-db-1 2>/dev/null
 "
 ```
-
-Only remove `twenty-dfxy-twenty-db-1` if you no longer need data in that local Postgres volume.
-
-### Duplicate Traefik (`traefik-jqir-traefik-1`)
-
-If a second Traefik container is **Restarting** (port 80/443 conflict with `root-traefik-1`), stop and remove it — keep **`root-traefik-1`** only:
-
-```bash
-ssh -i "$SSH_KEY" $VPS "docker stop traefik-jqir-traefik-1 && docker rm traefik-jqir-traefik-1"
-```
-
-**Keep running:** `root-traefik-1`, `root-n8n-1`, `twenty-crm-server-1`, `twenty-crm-worker-1`, `twenty-crm-redis-1`.
 
 ---
 
@@ -398,10 +389,10 @@ ssh -i "$SSH_KEY" $VPS "docker stop traefik-jqir-traefik-1 && docker rm traefik-
 
 | | Local | Production VPS |
 | - | ----- | ---------------- |
-| Compose file | `docker-compose.yml` | `docker-compose.prod.yml` |
+| Compose file | `docker-compose.yml` | `docker-compose.prod.standalone.yml` |
 | Image | `twentycrm/twenty` or local build | `ghcr.io/lakshit77/twenty-crm` |
 | `SERVER_URL` | `http://localhost:3000` | `https://crm.lakshitukani.com` |
-| Reverse proxy | None (port 3000) | Traefik (existing) |
+| Reverse proxy | None (port 3000) | Traefik (bundled in standalone compose) |
 | Env file | `packages/twenty-docker/.env` | `~/twenty-crm/.env` on VPS |
 
 ---
@@ -410,12 +401,12 @@ ssh -i "$SSH_KEY" $VPS "docker stop traefik-jqir-traefik-1 && docker rm traefik-
 
 | Symptom | Check |
 | ------- | ----- |
-| `Permission denied (publickey)` | Add `.ssh/id_ed25519.pub` to Hostinger SSH keys; use correct `SSH_KEY` path |
+| `Permission denied (publickey)` | Add `new.ssh/id_ed25519.pub` to Hostinger SSH keys; use correct `SSH_KEY` path |
 | Pull 401 / denied | GHCR package visibility or `docker login` on VPS |
 | Server unhealthy | `docker compose logs server` — Supabase URL, SSL flag, `ENCRYPTION_KEY` |
-| **504** on `https://crm...` | (1) Server not on `root_default` — connect it or redeploy compose. (2) Server on two networks but Traefik uses wrong IP — ensure `traefik.docker.network=root_default` label, then `docker compose -f docker-compose.prod.yml up -d` and verify backend: `docker exec root-traefik-1 wget -qO- http://127.0.0.1:8080/api/http/services \| grep -A1 twenty-crm` shows `172.18.x.x`, not `172.20.x.x` |
-| HTTPS certificate error | DNS + `docker restart root-traefik-1` |
-| Port 80/443 bind error | Do not start Caddy; Traefik already uses those ports |
+| **504** on `https://crm...` | Check `twenty-crm-server-1` is healthy; restart Traefik: `docker restart twenty-crm-traefik-1` |
+| HTTPS certificate error | DNS points to `89.116.20.227` + `docker restart twenty-crm-traefik-1` |
+| Port 80/443 bind error | Another process on the VPS is using those ports — stop it before starting Twenty |
 | Upload 403 | R2 CORS for production origin |
 | Wrong app version | `docker compose pull` then `up -d` |
 
@@ -425,7 +416,8 @@ ssh -i "$SSH_KEY" $VPS "docker stop traefik-jqir-traefik-1 && docker rm traefik-
 
 | File | Purpose |
 | ---- | ------- |
-| `docker-compose.prod.yml` | Production stack (Traefik labels, GHCR image) |
+| `docker-compose.prod.standalone.yml` | Dedicated VPS stack (Traefik + app + Redis) |
+| `docker-compose.prod.yml` | Legacy shared-VPS stack (external Traefik on n8n host) |
 | `docker-compose.yml` | Local Hub image + port 3000 |
 | `.env.production.example` | VPS `.env` template (no secrets) |
 | `.env` | Local secrets (gitignored) |
@@ -433,4 +425,4 @@ ssh -i "$SSH_KEY" $VPS "docker stop traefik-jqir-traefik-1 && docker rm traefik-
 | `twenty/Dockerfile` | Image build definition |
 | `../../.github/workflows/publish-ghcr.yaml` | CI publish to GHCR |
 
-**Removed (do not recreate):** `Caddyfile`, Caddy-based compose — incompatible with this VPS’s Traefik setup.
+**Removed (do not recreate on dedicated VPS):** Caddy, content-backend stacks — incompatible with Twenty's Traefik on 80/443.
