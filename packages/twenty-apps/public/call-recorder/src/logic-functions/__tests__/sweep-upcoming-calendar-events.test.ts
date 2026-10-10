@@ -1,92 +1,120 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { RECONCILE_UPCOMING_CALENDAR_EVENTS_LOGIC_FUNCTION_UNIVERSAL_IDENTIFIER } from 'src/constants/universal-identifiers';
+import { ENQUEUED_JOB_RETRY_LIMIT } from 'src/logic-functions/constants/enqueued-job-retry-limit';
+import { UPCOMING_CALENDAR_EVENT_RECONCILIATION_BATCH_SIZE } from 'src/logic-functions/constants/upcoming-calendar-event-reconciliation-batch-size';
 import sweepLogicFunction, {
   sweepUpcomingCalendarEventsHandler,
 } from 'src/logic-functions/sweep-upcoming-calendar-events';
 
-const fetchUpcomingCalendarEventIdsMock = vi.hoisted(() => vi.fn());
-const reconcileUpcomingCalendarEventBatchesMock = vi.hoisted(() => vi.fn());
+const queryMock = vi.hoisted(() => vi.fn());
+const enqueueJobsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('twenty-client-sdk/core', () => ({
-  CoreApiClient: vi.fn(),
+  CoreApiClient: class {
+    query = queryMock;
+  },
 }));
 
-vi.mock(
-  'src/logic-functions/data/fetch-upcoming-calendar-event-ids.util',
-  () => ({
-    fetchUpcomingCalendarEventIds: fetchUpcomingCalendarEventIdsMock,
-  }),
-);
+vi.mock('twenty-sdk/logic-function', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  enqueueJobs: enqueueJobsMock,
+}));
 
-vi.mock(
-  'src/logic-functions/flows/reconcile-upcoming-calendar-event-batches.util',
-  () => ({
-    reconcileUpcomingCalendarEventBatches:
-      reconcileUpcomingCalendarEventBatchesMock,
-  }),
-);
+const buildConnection = <TNode>(nodes: TNode[]) => ({
+  pageInfo: { hasNextPage: false, endCursor: null },
+  edges: nodes.map((node) => ({ node })),
+});
 
-const BATCH_RESULT = {
-  reconciledCalendarEventIds: ['calendar-event-1'],
-  failedCalendarEventIds: [],
-  remainingCalendarEventIds: [],
-  actionCounts: { created: 1, updated: 0, canceled: 0, skipped: 0, failed: 0 },
-  continuationRequested: false,
-};
+let upcomingCalendarEventIds: string[];
 
 describe('sweepUpcomingCalendarEventsHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchUpcomingCalendarEventIdsMock.mockResolvedValue([]);
-    reconcileUpcomingCalendarEventBatchesMock.mockResolvedValue(BATCH_RESULT);
+    upcomingCalendarEventIds = [];
+    queryMock.mockImplementation(async () => ({
+      calendarEvents: buildConnection(
+        upcomingCalendarEventIds.map((id) => ({ id })),
+      ),
+    }));
+    enqueueJobsMock.mockImplementation(async ({ payloads }) => ({
+      enqueued: true,
+      enqueuedJobsCount: payloads.length,
+    }));
   });
 
-  it('is configured as a daily cron with a self-invokable timeout', () => {
+  it('has no cron trigger of its own', () => {
     expect(sweepLogicFunction.config).toEqual(
       expect.objectContaining({
         name: 'sweep-upcoming-calendar-events',
         timeoutSeconds: 900,
-        cronTriggerSettings: { pattern: '0 4 * * *' },
       }),
     );
+    expect(sweepLogicFunction.config.cronTriggerSettings).toBeUndefined();
   });
 
-  it('reconciles every upcoming calendar event within the horizon', async () => {
-    fetchUpcomingCalendarEventIdsMock.mockResolvedValue([
-      'calendar-event-1',
-      'calendar-event-2',
-    ]);
+  it('enqueues one reconciliation batch for the upcoming calendar events', async () => {
+    upcomingCalendarEventIds = ['calendar-event-1', 'calendar-event-2'];
 
     const result = await sweepUpcomingCalendarEventsHandler();
 
-    expect(fetchUpcomingCalendarEventIdsMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(Date),
-    );
-    expect(reconcileUpcomingCalendarEventBatchesMock).toHaveBeenCalledWith(
+    expect(queryMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        calendarEventIds: ['calendar-event-1', 'calendar-event-2'],
+        calendarEvents: expect.objectContaining({
+          __args: expect.objectContaining({
+            filter: expect.objectContaining({ isCanceled: { eq: false } }),
+          }),
+        }),
       }),
     );
-    expect(result).toEqual({ outcome: 'processed', ...BATCH_RESULT });
+    expect(enqueueJobsMock).toHaveBeenCalledExactlyOnceWith({
+      logicFunctionUniversalIdentifier:
+        RECONCILE_UPCOMING_CALENDAR_EVENTS_LOGIC_FUNCTION_UNIVERSAL_IDENTIFIER,
+      payloads: [
+        { calendarEventIds: ['calendar-event-1', 'calendar-event-2'] },
+      ],
+      retryLimit: ENQUEUED_JOB_RETRY_LIMIT,
+    });
+    expect(result).toEqual({
+      outcome: 'batches-enqueued',
+      calendarEventCount: 2,
+      batchCount: 1,
+    });
   });
 
-  it('short-circuits without running batches when nothing is upcoming', async () => {
+  it('splits the window into batches of the reconciliation batch size', async () => {
+    upcomingCalendarEventIds = Array.from(
+      { length: UPCOMING_CALENDAR_EVENT_RECONCILIATION_BATCH_SIZE + 1 },
+      (_, calendarEventIndex) => `calendar-event-${calendarEventIndex}`,
+    );
+
+    const result = await sweepUpcomingCalendarEventsHandler();
+
+    const [{ payloads }] = enqueueJobsMock.mock.calls[0];
+
+    expect(payloads).toHaveLength(2);
+    expect(payloads[0].calendarEventIds).toHaveLength(
+      UPCOMING_CALENDAR_EVENT_RECONCILIATION_BATCH_SIZE,
+    );
+    expect(payloads[1].calendarEventIds).toHaveLength(1);
+    expect(result).toEqual(
+      expect.objectContaining({ outcome: 'batches-enqueued', batchCount: 2 }),
+    );
+  });
+
+  it('short-circuits without enqueuing when nothing is upcoming', async () => {
     const result = await sweepUpcomingCalendarEventsHandler();
 
     expect(result).toEqual({ outcome: 'nothing-to-reconcile' });
-    expect(reconcileUpcomingCalendarEventBatchesMock).not.toHaveBeenCalled();
+    expect(enqueueJobsMock).not.toHaveBeenCalled();
   });
 
-  it('passes a deadline that reserves time for the continuation request', async () => {
-    fetchUpcomingCalendarEventIdsMock.mockResolvedValue(['calendar-event-1']);
+  it('marks sweep failures as retryable so the platform redelivers the job', async () => {
+    queryMock.mockRejectedValue(new Error('Service unavailable'));
 
-    await sweepUpcomingCalendarEventsHandler();
-
-    const { deadlineAtMs } =
-      reconcileUpcomingCalendarEventBatchesMock.mock.calls[0][0];
-
-    expect(deadlineAtMs).toBeLessThan(Date.now() + 900 * 1000);
-    expect(deadlineAtMs).toBeGreaterThan(Date.now() + 800 * 1000);
+    await expect(sweepUpcomingCalendarEventsHandler()).rejects.toMatchObject({
+      name: 'RetryableLogicFunctionError',
+      message: expect.stringContaining('Service unavailable'),
+    });
   });
 });

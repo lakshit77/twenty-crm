@@ -1,43 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { CoreApiClient } from 'twenty-client-sdk/core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { type CoreApiClient } from 'twenty-client-sdk/core';
 
 import { generateCallRecordingSummary } from 'src/logic-functions/flows/generate-call-recording-summary.util';
 
 const runAgentMock = vi.hoisted(() => vi.fn());
-const findCallRecordingForSummaryMock = vi.hoisted(() => vi.fn());
-const updateCallRecordingMock = vi.hoisted(() => vi.fn());
-const getCallRecorderAdditionalSummaryPromptMock = vi.hoisted(() => vi.fn());
-const isCallRecordingSummaryEnabledMock = vi.hoisted(() => vi.fn());
 
-vi.mock('twenty-sdk/logic-function', () => ({
+vi.mock('twenty-sdk/logic-function', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   runAgent: runAgentMock,
 }));
-
-vi.mock(
-  'src/logic-functions/data/find-call-recording-for-summary.util',
-  () => ({
-    findCallRecordingForSummary: findCallRecordingForSummaryMock,
-  }),
-);
-
-vi.mock('src/logic-functions/data/update-call-recording.util', () => ({
-  updateCallRecording: updateCallRecordingMock,
-}));
-
-vi.mock(
-  'src/logic-functions/utils/get-call-recorder-additional-summary-prompt.util',
-  () => ({
-    getCallRecorderAdditionalSummaryPrompt:
-      getCallRecorderAdditionalSummaryPromptMock,
-  }),
-);
-
-vi.mock(
-  'src/logic-functions/utils/is-call-recording-summary-enabled.util',
-  () => ({
-    isCallRecordingSummaryEnabled: isCallRecordingSummaryEnabledMock,
-  }),
-);
 
 const TRANSCRIPT = [
   {
@@ -46,27 +17,31 @@ const TRANSCRIPT = [
   },
 ];
 
-const CLIENT: CoreApiClient = Object.assign(
-  Object.create(CoreApiClient.prototype),
-  {
-    mutation: vi.fn(),
-    query: vi.fn(),
-  },
-);
+const queryMock = vi.fn();
+const mutationMock = vi.fn();
+
+const CLIENT = {
+  query: queryMock,
+  mutation: mutationMock,
+} as unknown as CoreApiClient;
+
+const seedCallRecording = (node: object) => {
+  queryMock.mockResolvedValue({ callRecordings: { edges: [{ node }] } });
+};
 
 describe('generateCallRecordingSummary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getCallRecorderAdditionalSummaryPromptMock.mockReturnValue(undefined);
-    isCallRecordingSummaryEnabledMock.mockReturnValue(true);
-    findCallRecordingForSummaryMock.mockResolvedValue({
+    vi.stubEnv('CALL_RECORDER_SUMMARY_ENABLED', 'true');
+    vi.stubEnv('CALL_RECORDER_ADDITIONAL_SUMMARY_PROMPT', '');
+    seedCallRecording({
       id: 'call-recording-1',
       title: 'Weekly sync',
       transcript: TRANSCRIPT,
-      summaryMarkdown: undefined,
+      summary: { markdown: null },
       createdBy: { source: 'APPLICATION', name: 'Call Recorder' },
     });
-    updateCallRecordingMock.mockResolvedValue(undefined);
+    mutationMock.mockResolvedValue({});
     runAgentMock.mockResolvedValue({
       success: true,
       error: null,
@@ -74,24 +49,28 @@ describe('generateCallRecordingSummary', () => {
     });
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('skips when summaries are disabled', async () => {
-    isCallRecordingSummaryEnabledMock.mockReturnValue(false);
+    vi.stubEnv('CALL_RECORDER_SUMMARY_ENABLED', 'false');
 
     const result = await generateCallRecordingSummary(CLIENT, {
       callRecordingId: 'call-recording-1',
     });
 
     expect(result).toEqual({ outcome: 'disabled' });
-    expect(findCallRecordingForSummaryMock).not.toHaveBeenCalled();
+    expect(queryMock).not.toHaveBeenCalled();
     expect(runAgentMock).not.toHaveBeenCalled();
   });
 
   it('skips when there is no real transcript', async () => {
-    findCallRecordingForSummaryMock.mockResolvedValue({
+    seedCallRecording({
       id: 'call-recording-1',
-      title: undefined,
+      title: null,
       transcript: { status: 'PENDING' },
-      summaryMarkdown: undefined,
+      summary: { markdown: null },
     });
 
     const result = await generateCallRecordingSummary(CLIENT, {
@@ -103,11 +82,11 @@ describe('generateCallRecordingSummary', () => {
   });
 
   it('skips when a summary already exists', async () => {
-    findCallRecordingForSummaryMock.mockResolvedValue({
+    seedCallRecording({
       id: 'call-recording-1',
-      title: undefined,
+      title: null,
       transcript: TRANSCRIPT,
-      summaryMarkdown: '## Overview\nAlready here.',
+      summary: { markdown: '## Overview\nAlready here.' },
     });
 
     const result = await generateCallRecordingSummary(CLIENT, {
@@ -118,12 +97,30 @@ describe('generateCallRecordingSummary', () => {
     expect(runAgentMock).not.toHaveBeenCalled();
   });
 
-  it('skips recordings another actor created when the app-created gate is on', async () => {
-    findCallRecordingForSummaryMock.mockResolvedValue({
+  it('regenerates an existing summary when explicitly requested', async () => {
+    seedCallRecording({
       id: 'call-recording-1',
-      title: undefined,
+      title: null,
       transcript: TRANSCRIPT,
-      summaryMarkdown: undefined,
+      summary: { markdown: '## Overview\nOld summary.' },
+    });
+
+    const result = await generateCallRecordingSummary(CLIENT, {
+      callRecordingId: 'call-recording-1',
+      shouldRegenerateExistingSummary: true,
+    });
+
+    expect(result).toEqual({ outcome: 'generated' });
+    expect(runAgentMock).toHaveBeenCalledTimes(1);
+    expect(mutationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips recordings another actor created when the app-created gate is on', async () => {
+    seedCallRecording({
+      id: 'call-recording-1',
+      title: null,
+      transcript: TRANSCRIPT,
+      summary: { markdown: null },
       createdBy: { source: 'MANUAL', name: 'Alex' },
     });
 
@@ -144,15 +141,26 @@ describe('generateCallRecordingSummary', () => {
 
     expect(result).toEqual({ outcome: 'generated' });
     expect(runAgentMock).toHaveBeenCalledTimes(1);
-    expect(updateCallRecordingMock).toHaveBeenCalledTimes(1);
+    expect(mutationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a save error without rethrowing when the summary write fails', async () => {
+    mutationMock.mockRejectedValue(new Error('Write timed out'));
+
+    const result = await generateCallRecordingSummary(CLIENT, {
+      callRecordingId: 'call-recording-1',
+    });
+
+    expect(result).toEqual({ outcome: 'save-error' });
+    expect(runAgentMock).toHaveBeenCalledTimes(1);
   });
 
   it('generates for recordings another actor created when explicitly requested', async () => {
-    findCallRecordingForSummaryMock.mockResolvedValue({
+    seedCallRecording({
       id: 'call-recording-1',
-      title: undefined,
+      title: null,
       transcript: TRANSCRIPT,
-      summaryMarkdown: undefined,
+      summary: { markdown: null },
       createdBy: { source: 'MANUAL', name: 'Alex' },
     });
 
@@ -174,18 +182,21 @@ describe('generateCallRecordingSummary', () => {
         prompt: expect.stringContaining('Alex: Hello team'),
       }),
     );
-    expect(updateCallRecordingMock).toHaveBeenCalledWith(CLIENT, {
-      id: 'call-recording-1',
-      data: {
-        summary: { blocknote: null, markdown: '## Overview\nGood call.' },
+    expect(mutationMock).toHaveBeenCalledWith({
+      updateCallRecording: {
+        __args: {
+          id: 'call-recording-1',
+          data: {
+            summary: { blocknote: null, markdown: '## Overview\nGood call.' },
+          },
+        },
+        id: true,
       },
     });
   });
 
   it('appends the workspace admin instructions to the agent prompt', async () => {
-    getCallRecorderAdditionalSummaryPromptMock.mockReturnValue(
-      'Write terse notes.',
-    );
+    vi.stubEnv('CALL_RECORDER_ADDITIONAL_SUMMARY_PROMPT', 'Write terse notes.');
 
     await generateCallRecordingSummary(CLIENT, {
       callRecordingId: 'call-recording-1',
@@ -200,21 +211,35 @@ describe('generateCallRecordingSummary', () => {
     );
   });
 
-  it('stores the no-summary verdict verbatim so the run is terminal', async () => {
+  it('stores a grounded unavailable placeholder so the run is terminal', async () => {
     runAgentMock.mockResolvedValue({
       success: true,
       error: null,
-      result: { response: 'No summary available.' },
+      result: {
+        response:
+          'SUMMARY_UNAVAILABLE: The transcript contains only greetings and audio checks.',
+      },
     });
 
     const result = await generateCallRecordingSummary(CLIENT, {
       callRecordingId: 'call-recording-1',
     });
 
-    expect(result).toEqual({ outcome: 'generated' });
-    expect(updateCallRecordingMock).toHaveBeenCalledWith(CLIENT, {
-      id: 'call-recording-1',
-      data: { summary: { blocknote: null, markdown: 'No summary available.' } },
+    expect(result).toEqual({ outcome: 'not-summarizable' });
+    expect(mutationMock).toHaveBeenCalledWith({
+      updateCallRecording: {
+        __args: {
+          id: 'call-recording-1',
+          data: {
+            summary: {
+              blocknote: null,
+              markdown:
+                '## Summary unavailable\n\nThe transcript contains only greetings and audio checks.',
+            },
+          },
+        },
+        id: true,
+      },
     });
   });
 
@@ -230,7 +255,7 @@ describe('generateCallRecordingSummary', () => {
     });
 
     expect(result).toEqual({ outcome: 'empty-summary' });
-    expect(updateCallRecordingMock).not.toHaveBeenCalled();
+    expect(mutationMock).not.toHaveBeenCalled();
   });
 
   it('propagates agent errors without writing a summary', async () => {
@@ -242,20 +267,6 @@ describe('generateCallRecordingSummary', () => {
       }),
     ).rejects.toThrow('Agent execution failed');
 
-    expect(updateCallRecordingMock).not.toHaveBeenCalled();
-  });
-
-  it('propagates summary write errors', async () => {
-    updateCallRecordingMock.mockRejectedValue(
-      new Error('Summary write failed'),
-    );
-
-    await expect(
-      generateCallRecordingSummary(CLIENT, {
-        callRecordingId: 'call-recording-1',
-      }),
-    ).rejects.toThrow('Summary write failed');
-
-    expect(updateCallRecordingMock).toHaveBeenCalledTimes(1);
+    expect(mutationMock).not.toHaveBeenCalled();
   });
 });

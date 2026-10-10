@@ -1,7 +1,12 @@
 import { type RemoteConnection } from '@remote-dom/core/elements';
-import { type CommandConfirmationModalResult } from 'twenty-sdk/front-component';
-import { type FrontComponentExecutionContext } from './FrontComponentExecutionContext';
-import { type HostToWorkerRenderContext } from './HostToWorkerRenderContext';
+import {
+  type CommandConfirmationModalResult,
+  type FrontComponentExecutionContext,
+} from 'twenty-sdk/front-component';
+import { type FocusUpdate } from '@/types/FocusUpdate';
+import { type GeometryUpdateBatch } from '@/types/GeometryUpdateBatch';
+import { type HostToWorkerRenderContext } from '@/types/HostToWorkerRenderContext';
+import { type MediaSessionEventBatch } from '@/types/MediaSession';
 
 export type WorkerExports = {
   render: (
@@ -13,4 +18,7 @@ export type WorkerExports = {
   onConfirmationModalResult: (
     result: CommandConfirmationModalResult,
   ) => Promise<void>;
+  pushGeometryUpdates: (batch: GeometryUpdateBatch) => Promise<void>;
+  pushFocusUpdate: (update: FocusUpdate) => Promise<void>;
+  pushMediaSessionEvents: (batch: MediaSessionEventBatch) => Promise<void>;
 };

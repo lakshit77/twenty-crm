@@ -4,7 +4,7 @@ import { OnboardingImportPreviewSyncBadge } from '@/onboarding/components/import
 import { OnboardingImportPrivacyNote } from '@/onboarding/components/import-contacts/OnboardingImportPrivacyNote';
 import { ONBOARDING_CONTENT_BLOCK_WIDTH } from '@/onboarding/constants/OnboardingContentBlockWidth';
 import { styled } from '@linaria/react';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { themeCssVariables } from 'twenty-ui/theme';
 
 const PREVIEW_HEIGHT = 198;
 
@@ -19,7 +19,7 @@ const StyledCard = styled.div`
   gap: ${themeCssVariables.spacing[3]};
   max-width: 100%;
   overflow: hidden;
-  padding-bottom: ${themeCssVariables.spacing[3]};
+  padding-bottom: calc(${themeCssVariables.spacing[3]} - 1px);
   width: ${ONBOARDING_CONTENT_BLOCK_WIDTH}px;
 `;
 

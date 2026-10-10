@@ -2,7 +2,7 @@ import { Command } from 'nest-commander';
 import { STANDARD_OBJECTS } from 'twenty-shared/metadata';
 import { isDefined } from 'twenty-shared/utils';
 
-import { ActiveOrSuspendedWorkspaceCommandRunner } from 'src/database/commands/command-runners/active-or-suspended-workspace.command-runner';
+import { ProvisionedWorkspaceCommandRunner } from 'src/database/commands/command-runners/provisioned-workspace.command-runner';
 import { WorkspaceIteratorService } from 'src/database/commands/command-runners/workspace-iterator.service';
 import { type RunOnWorkspaceArgs } from 'src/database/commands/command-runners/workspace.command-runner';
 import { ApplicationService } from 'src/engine/core-modules/application/application.service';
@@ -22,9 +22,15 @@ const LIST = STANDARD_OBJECTS.messageList;
 const LIST_VIEW_UNIVERSAL_IDENTIFIER =
   LIST.views.allMessageLists.universalIdentifier;
 
-const LIST_VIEW_FIELD_UNIVERSAL_IDENTIFIERS = Object.values(
-  LIST.views.allMessageLists.viewFields,
-).map((viewField) => viewField.universalIdentifier);
+// Pinned to the columns the view had in 2.20: the description column and its
+// field only exist from 2.39, so reading the current standard definition here
+// would reference field metadata that later commands have not created yet.
+const LIST_VIEW_FIELD_UNIVERSAL_IDENTIFIERS = [
+  LIST.views.allMessageLists.viewFields.name.universalIdentifier,
+  LIST.views.allMessageLists.viewFields.members.universalIdentifier,
+  LIST.views.allMessageLists.viewFields.campaigns.universalIdentifier,
+  LIST.views.allMessageLists.viewFields.createdAt.universalIdentifier,
+];
 
 @RegisteredWorkspaceCommand('2.20.0', 1783525261001)
 @Command({
@@ -32,7 +38,7 @@ const LIST_VIEW_FIELD_UNIVERSAL_IDENTIFIERS = Object.values(
   description:
     'Create the MessageList standard view and its columns on existing workspaces',
 })
-export class CreateMessageListViewCommand extends ActiveOrSuspendedWorkspaceCommandRunner {
+export class CreateMessageListViewCommand extends ProvisionedWorkspaceCommandRunner {
   constructor(
     protected readonly workspaceIteratorService: WorkspaceIteratorService,
     private readonly applicationService: ApplicationService,

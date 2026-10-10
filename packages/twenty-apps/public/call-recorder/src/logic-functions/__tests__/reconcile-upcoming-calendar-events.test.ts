@@ -1,137 +1,175 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { type RoutePayload } from 'twenty-sdk/define';
 
-import routeLogicFunction, {
+import reconcileLogicFunction, {
   reconcileUpcomingCalendarEventsHandler,
 } from 'src/logic-functions/reconcile-upcoming-calendar-events';
 
-const fetchUpcomingCalendarEventIdsMock = vi.hoisted(() => vi.fn());
-const reconcileUpcomingCalendarEventBatchesMock = vi.hoisted(() => vi.fn());
+const queryMock = vi.hoisted(() => vi.fn());
+const mutationMock = vi.hoisted(() => vi.fn());
 
 vi.mock('twenty-client-sdk/core', () => ({
-  CoreApiClient: vi.fn(),
+  CoreApiClient: class {
+    query = queryMock;
+    mutation = mutationMock;
+  },
 }));
 
-vi.mock(
-  'src/logic-functions/data/fetch-upcoming-calendar-event-ids.util',
-  () => ({
-    fetchUpcomingCalendarEventIds: fetchUpcomingCalendarEventIdsMock,
-  }),
-);
-
-vi.mock(
-  'src/logic-functions/flows/reconcile-upcoming-calendar-event-batches.util',
-  () => ({
-    reconcileUpcomingCalendarEventBatches:
-      reconcileUpcomingCalendarEventBatchesMock,
-  }),
-);
-
-const buildRoutePayload = (
-  body: object | null,
-): RoutePayload<{ calendarEventIds?: string[] }> =>
-  ({
-    body,
-    headers: {},
-    queryStringParameters: {},
-    pathParameters: {},
-    isBase64Encoded: false,
-    rawBody: undefined,
-    requestContext: { http: { method: 'POST', path: '/' } },
-    userWorkspaceId: null,
-  }) as never;
-
-const BATCH_RESULT = {
-  reconciledCalendarEventIds: ['calendar-event-1'],
-  failedCalendarEventIds: [],
-  remainingCalendarEventIds: [],
-  actionCounts: { created: 1, updated: 0, canceled: 0, skipped: 0, failed: 0 },
-  continuationRequested: false,
+type CalendarEventNode = {
+  id: string;
+  title: string;
+  isCanceled: boolean;
+  startsAt: string;
+  endsAt: string;
 };
+
+type RecordsQuery = {
+  calendarEvents?: {
+    __args: {
+      filter: {
+        id?: { in: string[] };
+        startsAt?: { in: string[] };
+      };
+    };
+  };
+  callRecordings?: { __args: { filter: Record<string, unknown> } };
+};
+
+const UPCOMING_STARTS_AT = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+const UPCOMING_ENDS_AT = new Date(
+  Date.now() + 2 * 60 * 60 * 1000,
+).toISOString();
+
+// Without a conference link the policy deterministically skips each meeting.
+const buildUpcomingCalendarEventNode = (id: string): CalendarEventNode => ({
+  id,
+  title: 'Upcoming Sync',
+  isCanceled: false,
+  startsAt: UPCOMING_STARTS_AT,
+  endsAt: UPCOMING_ENDS_AT,
+});
+
+const buildConnection = <TNode>(nodes: TNode[]) => ({
+  pageInfo: { hasNextPage: false, endCursor: null },
+  edges: nodes.map((node) => ({ node })),
+});
+
+let upcomingCalendarEventNodes: CalendarEventNode[];
 
 describe('reconcileUpcomingCalendarEventsHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchUpcomingCalendarEventIdsMock.mockResolvedValue([]);
-    reconcileUpcomingCalendarEventBatchesMock.mockResolvedValue(BATCH_RESULT);
+    upcomingCalendarEventNodes = [];
+    queryMock.mockImplementation(async (query: RecordsQuery) => {
+      if (query.calendarEvents !== undefined) {
+        const filter = query.calendarEvents.__args.filter;
+
+        if (filter.id !== undefined) {
+          const requestedIds = filter.id.in;
+
+          return {
+            calendarEvents: buildConnection(
+              upcomingCalendarEventNodes.filter((node) =>
+                requestedIds.includes(node.id),
+              ),
+            ),
+          };
+        }
+
+        if (filter.startsAt !== undefined) {
+          const requestedStartsAtValues = filter.startsAt.in;
+
+          return {
+            calendarEvents: buildConnection(
+              upcomingCalendarEventNodes.filter((node) =>
+                requestedStartsAtValues.includes(node.startsAt),
+              ),
+            ),
+          };
+        }
+
+        return {
+          calendarEvents: buildConnection(upcomingCalendarEventNodes),
+        };
+      }
+
+      if (query.callRecordings !== undefined) {
+        return { callRecordings: buildConnection([]) };
+      }
+
+      throw new Error(`Unhandled query: ${JSON.stringify(query)}`);
+    });
   });
 
-  it('is configured as an authenticated route with a self-invokable timeout', () => {
-    expect(routeLogicFunction.config).toEqual(
+  it('is configured as an enqueue-only batch worker', () => {
+    expect(reconcileLogicFunction.config).toEqual(
       expect.objectContaining({
         name: 'reconcile-upcoming-calendar-events',
         timeoutSeconds: 900,
-        httpRouteTriggerSettings: {
-          path: '/call-recorder/reconcile-upcoming-calendar-events',
-          httpMethod: 'POST',
-          isAuthRequired: true,
-        },
       }),
     );
+    expect(reconcileLogicFunction.config).not.toHaveProperty(
+      'httpRouteTriggerSettings',
+    );
+    expect(reconcileLogicFunction.config).not.toHaveProperty(
+      'cronTriggerSettings',
+    );
   });
 
-  it('processes explicit calendar event ids without sweeping', async () => {
-    const result = await reconcileUpcomingCalendarEventsHandler(
-      buildRoutePayload({ calendarEventIds: ['calendar-event-1'] }),
-    );
+  it('reconciles the calendar events of its batch payload', async () => {
+    upcomingCalendarEventNodes = [
+      buildUpcomingCalendarEventNode('calendar-event-1'),
+      buildUpcomingCalendarEventNode('calendar-event-2'),
+    ];
 
-    expect(result).toEqual({ outcome: 'processed', ...BATCH_RESULT });
-    expect(reconcileUpcomingCalendarEventBatchesMock).toHaveBeenCalledWith(
-      expect.objectContaining({ calendarEventIds: ['calendar-event-1'] }),
-    );
-    expect(fetchUpcomingCalendarEventIdsMock).not.toHaveBeenCalled();
-  });
+    const result = await reconcileUpcomingCalendarEventsHandler({
+      calendarEventIds: ['calendar-event-1', 'calendar-event-2'],
+    });
 
-  it('sweeps upcoming calendar events when no ids are given', async () => {
-    fetchUpcomingCalendarEventIdsMock.mockResolvedValue([
-      'calendar-event-1',
-      'calendar-event-2',
-    ]);
-
-    const result = await reconcileUpcomingCalendarEventsHandler(
-      buildRoutePayload(null),
-    );
-
-    expect(fetchUpcomingCalendarEventIdsMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.any(Date),
-    );
-    expect(reconcileUpcomingCalendarEventBatchesMock).toHaveBeenCalledWith(
+    expect(queryMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        calendarEventIds: ['calendar-event-1', 'calendar-event-2'],
+        calendarEvents: expect.objectContaining({
+          __args: expect.objectContaining({
+            filter: { id: { in: ['calendar-event-1', 'calendar-event-2'] } },
+          }),
+        }),
       }),
     );
-    expect(result).toEqual({ outcome: 'processed', ...BATCH_RESULT });
+    expect(result).toEqual({
+      outcome: 'processed',
+      reconciledCalendarEventIds: ['calendar-event-1', 'calendar-event-2'],
+      actionCounts: {
+        created: 0,
+        updated: 0,
+        canceled: 0,
+        skipped: 2,
+        failed: 0,
+      },
+    });
   });
 
-  it('short-circuits an empty sweep without running batches', async () => {
-    const result = await reconcileUpcomingCalendarEventsHandler(
-      buildRoutePayload({}),
-    );
-
-    expect(result).toEqual({ outcome: 'nothing-to-reconcile' });
-    expect(reconcileUpcomingCalendarEventBatchesMock).not.toHaveBeenCalled();
+  it('skips payloads without calendar event ids', async () => {
+    expect(await reconcileUpcomingCalendarEventsHandler({})).toEqual({
+      outcome: 'nothing-selected',
+    });
+    expect(await reconcileUpcomingCalendarEventsHandler(null)).toEqual({
+      outcome: 'nothing-selected',
+    });
+    expect(
+      await reconcileUpcomingCalendarEventsHandler({ calendarEventIds: [] }),
+    ).toEqual({ outcome: 'nothing-selected' });
+    expect(queryMock).not.toHaveBeenCalled();
   });
 
-  it('does not sweep when an empty calendar event selection is sent', async () => {
-    const result = await reconcileUpcomingCalendarEventsHandler(
-      buildRoutePayload({ calendarEventIds: [] }),
-    );
+  it('rethrows a batch failure as retryable so the queue redelivers it', async () => {
+    queryMock.mockRejectedValue(new Error('Service unavailable'));
 
-    expect(result).toEqual({ outcome: 'nothing-selected' });
-    expect(fetchUpcomingCalendarEventIdsMock).not.toHaveBeenCalled();
-    expect(reconcileUpcomingCalendarEventBatchesMock).not.toHaveBeenCalled();
-  });
-
-  it('passes a deadline that reserves time for the continuation request', async () => {
-    await reconcileUpcomingCalendarEventsHandler(
-      buildRoutePayload({ calendarEventIds: ['calendar-event-1'] }),
-    );
-
-    const { deadlineAtMs } =
-      reconcileUpcomingCalendarEventBatchesMock.mock.calls[0][0];
-
-    expect(deadlineAtMs).toBeLessThan(Date.now() + 900 * 1000);
-    expect(deadlineAtMs).toBeGreaterThan(Date.now() + 800 * 1000);
+    await expect(
+      reconcileUpcomingCalendarEventsHandler({
+        calendarEventIds: ['calendar-event-1'],
+      }),
+    ).rejects.toMatchObject({
+      name: 'RetryableLogicFunctionError',
+      message: expect.stringContaining('Service unavailable'),
+    });
   });
 });

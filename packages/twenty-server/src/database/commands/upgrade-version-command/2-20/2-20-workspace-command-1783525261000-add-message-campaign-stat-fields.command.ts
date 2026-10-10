@@ -2,7 +2,7 @@ import { Command } from 'nest-commander';
 import { STANDARD_OBJECTS } from 'twenty-shared/metadata';
 import { isDefined } from 'twenty-shared/utils';
 
-import { ActiveOrSuspendedWorkspaceCommandRunner } from 'src/database/commands/command-runners/active-or-suspended-workspace.command-runner';
+import { ProvisionedWorkspaceCommandRunner } from 'src/database/commands/command-runners/provisioned-workspace.command-runner';
 import { WorkspaceIteratorService } from 'src/database/commands/command-runners/workspace-iterator.service';
 import { type RunOnWorkspaceArgs } from 'src/database/commands/command-runners/workspace.command-runner';
 import { ApplicationService } from 'src/engine/core-modules/application/application.service';
@@ -28,8 +28,8 @@ const STAT_FIELD_UNIVERSAL_IDENTIFIERS = [
 ];
 
 // The allMessageCampaigns view is introduced by this feature, so existing
-// workspaces have no messageCampaign view at all. Create the view and every one
-// of its columns (not just the stat columns) so it materializes end to end.
+// workspaces have no messageCampaign view at all. Create the view and its
+// columns (not just the stat columns) so it materializes end to end.
 const CAMPAIGN_VIEW_UNIVERSAL_IDENTIFIER =
   CAMPAIGN.views.allMessageCampaigns.universalIdentifier;
 
@@ -43,7 +43,7 @@ const CAMPAIGN_VIEW_FIELD_UNIVERSAL_IDENTIFIERS = Object.values(
   description:
     'Add the MessageCampaign delivery-stat fields (sent/failed/bounced/complained) and their view columns on existing workspaces',
 })
-export class AddMessageCampaignStatFieldsCommand extends ActiveOrSuspendedWorkspaceCommandRunner {
+export class AddMessageCampaignStatFieldsCommand extends ProvisionedWorkspaceCommandRunner {
   constructor(
     protected readonly workspaceIteratorService: WorkspaceIteratorService,
     private readonly applicationService: ApplicationService,
@@ -126,13 +126,12 @@ export class AddMessageCampaignStatFieldsCommand extends ActiveOrSuspendedWorksp
     const viewFieldsToCreate = CAMPAIGN_VIEW_FIELD_UNIVERSAL_IDENTIFIERS.filter(
       (universalIdentifier) =>
         !isDefined(flatViewFieldMaps.byUniversalIdentifier[universalIdentifier]),
-    ).map((universalIdentifier) => {
-      const standardViewField = findFlatEntityByUniversalIdentifier<FlatViewField>(
-        {
+    ).flatMap((universalIdentifier) => {
+      const standardViewField =
+        findFlatEntityByUniversalIdentifier<FlatViewField>({
           flatEntityMaps: standardAllFlatEntityMaps.flatViewFieldMaps,
           universalIdentifier,
-        },
-      );
+        });
 
       if (!isDefined(standardViewField)) {
         throw new Error(
@@ -140,7 +139,27 @@ export class AddMessageCampaignStatFieldsCommand extends ActiveOrSuspendedWorksp
         );
       }
 
-      return standardViewField;
+      const fieldUniversalIdentifier =
+        standardAllFlatEntityMaps.flatFieldMetadataMaps.universalIdentifierById[
+          standardViewField.fieldMetadataId
+        ];
+
+      if (!isDefined(fieldUniversalIdentifier)) {
+        return [];
+      }
+
+      // The standard column list keeps growing after 2.20, so skip columns whose
+      // field a later command introduces and backfills.
+      const isFieldAvailable =
+        isDefined(
+          flatFieldMetadataMaps.byUniversalIdentifier[fieldUniversalIdentifier],
+        ) ||
+        fieldsToCreate.some(
+          (fieldToCreate) =>
+            fieldToCreate.universalIdentifier === fieldUniversalIdentifier,
+        );
+
+      return isFieldAvailable ? [standardViewField] : [];
     });
 
     const hasMetadataChanges =

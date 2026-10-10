@@ -5,7 +5,7 @@ import { Command } from 'nest-commander';
 import { type FeatureFlagKey } from 'twenty-shared/types';
 import { type DeepPartial, Repository } from 'typeorm';
 
-import { ActiveOrSuspendedWorkspaceCommandRunner } from 'src/database/commands/command-runners/active-or-suspended-workspace.command-runner';
+import { ProvisionedWorkspaceCommandRunner } from 'src/database/commands/command-runners/provisioned-workspace.command-runner';
 import { WorkspaceIteratorService } from 'src/database/commands/command-runners/workspace-iterator.service';
 import { type RunOnWorkspaceArgs } from 'src/database/commands/command-runners/workspace.command-runner';
 import { FeatureFlagService } from 'src/engine/core-modules/feature-flag/services/feature-flag.service';
@@ -15,7 +15,7 @@ import { CalendarChannelEntity } from 'src/engine/metadata-modules/calendar-chan
 import { ConnectedAccountEntity } from 'src/engine/metadata-modules/connected-account/entities/connected-account.entity';
 import { MessageChannelEntity } from 'src/engine/metadata-modules/message-channel/entities/message-channel.entity';
 import { MessageFolderEntity } from 'src/engine/metadata-modules/message-folder/entities/message-folder.entity';
-import { GlobalWorkspaceOrmManager } from 'src/engine/twenty-orm/global-workspace-datasource/global-workspace-orm.manager';
+import { WorkspaceOrmManager } from 'src/engine/twenty-orm/workspace-orm.manager';
 import { type WorkspaceMemberWorkspaceEntity } from 'src/modules/workspace-member/standard-objects/workspace-member.workspace-entity';
 
 type LegacyConnectedAccountWorkspaceEntity = {
@@ -41,9 +41,9 @@ type LegacyConnectedAccountWorkspaceEntity = {
   description:
     'Backfill connectedAccount, messageChannel, calendarChannel, and messageFolder to core metadata schema',
 })
-export class MigrateMessagingInfrastructureToMetadataCommand extends ActiveOrSuspendedWorkspaceCommandRunner {
+export class MigrateMessagingInfrastructureToMetadataCommand extends ProvisionedWorkspaceCommandRunner {
   constructor(
-    private readonly twentyORMGlobalManager: GlobalWorkspaceOrmManager,
+    private readonly workspaceOrmManager: WorkspaceOrmManager,
     @InjectRepository(ConnectedAccountEntity)
     private readonly connectedAccountRepository: Repository<ConnectedAccountEntity>,
     @InjectRepository(MessageChannelEntity)
@@ -80,27 +80,19 @@ export class MigrateMessagingInfrastructureToMetadataCommand extends ActiveOrSus
     const isDryRun = options.dryRun ?? false;
 
     const connectedAccountWorkspaceRepository =
-      await this.twentyORMGlobalManager.getRepository<LegacyConnectedAccountWorkspaceEntity>(
-        workspaceId,
-        'connectedAccount',
+      this.workspaceOrmManager.getRepository<LegacyConnectedAccountWorkspaceEntity>('connectedAccount',
       );
 
     const messageChannelWorkspaceRepository =
-      await this.twentyORMGlobalManager.getRepository<MessageChannelEntity>(
-        workspaceId,
-        'messageChannel',
+      this.workspaceOrmManager.getRepository<MessageChannelEntity>('messageChannel',
       );
 
     const calendarChannelWorkspaceRepository =
-      await this.twentyORMGlobalManager.getRepository<CalendarChannelEntity>(
-        workspaceId,
-        'calendarChannel',
+      this.workspaceOrmManager.getRepository<CalendarChannelEntity>('calendarChannel',
       );
 
     const messageFolderWorkspaceRepository =
-      await this.twentyORMGlobalManager.getRepository<MessageFolderEntity>(
-        workspaceId,
-        'messageFolder',
+      this.workspaceOrmManager.getRepository<MessageFolderEntity>('messageFolder',
       );
 
     const connectedAccounts = await connectedAccountWorkspaceRepository.find();
@@ -373,9 +365,7 @@ export class MigrateMessagingInfrastructureToMetadataCommand extends ActiveOrSus
     workspaceId: string,
   ): Promise<Map<string, string>> {
     const workspaceMemberRepository =
-      await this.twentyORMGlobalManager.getRepository<WorkspaceMemberWorkspaceEntity>(
-        workspaceId,
-        'workspaceMember',
+      this.workspaceOrmManager.getRepository<WorkspaceMemberWorkspaceEntity>('workspaceMember',
         { shouldBypassPermissionChecks: true },
       );
 

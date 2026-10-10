@@ -1,43 +1,61 @@
 import { styled } from '@linaria/react';
-import { Avatar } from 'twenty-ui/data-display';
-import { themeCssVariables } from 'twenty-ui/theme-constants';
+import { Avatar, type AvatarSize } from 'twenty-ui/primitives/data-display';
+import { themeCssVariables } from 'twenty-ui/theme';
 
 import { currentWorkspaceMemberState } from '@/auth/states/currentWorkspaceMemberState';
 import { useAtomStateValue } from '@/ui/utilities/state/jotai/hooks/useAtomStateValue';
 import { getAbsoluteImageUrl } from '~/utils/image/getAbsoluteImageUrl';
 
-const StyledChip = styled.div`
+type WelcomePersonChipSizeVariant = 'default' | 'compact';
+
+const StyledChip = styled.div<{ sizeVariant: WelcomePersonChipSizeVariant }>`
   align-items: center;
-  background: ${themeCssVariables.background.transparent.light};
-  border-radius: ${themeCssVariables.border.radius.md};
   display: inline-flex;
-  gap: ${themeCssVariables.spacing[2]};
-  padding: ${themeCssVariables.spacing[1]} ${themeCssVariables.spacing[2]};
+  gap: ${({ sizeVariant }) =>
+    sizeVariant === 'compact'
+      ? themeCssVariables.spacing[1]
+      : themeCssVariables.spacing[2]};
+  padding: ${({ sizeVariant }) =>
+    sizeVariant === 'compact'
+      ? `${themeCssVariables.spacing['0.5']} ${themeCssVariables.spacing[1]}`
+      : `${themeCssVariables.spacing[1]} ${themeCssVariables.spacing[2]}`};
 `;
 
 const StyledPersonName = styled.span`
   color: ${themeCssVariables.font.color.primary};
-  max-width: min(40vw, 360px);
+  max-width: min(calc(40vw / var(--t-zoom, 1)), 360px);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+
+  @media (max-width: 600px) {
+    max-width: min(calc(70vw / var(--t-zoom, 1)), 360px);
+  }
 `;
 
-export const WelcomePersonChip = () => {
+type WelcomePersonChipProps = {
+  avatarSize?: AvatarSize;
+  sizeVariant?: WelcomePersonChipSizeVariant;
+};
+
+export const WelcomePersonChip = ({
+  avatarSize = 'lg',
+  sizeVariant = 'default',
+}: WelcomePersonChipProps) => {
   const currentWorkspaceMember = useAtomStateValue(currentWorkspaceMemberState);
   const firstName = currentWorkspaceMember?.name?.firstName ?? '';
   const lastName = currentWorkspaceMember?.name?.lastName ?? '';
   const fullName = `${firstName} ${lastName}`.trim();
 
   return (
-    <StyledChip>
+    <StyledChip sizeVariant={sizeVariant}>
       <Avatar
-        type="rounded"
-        size="lg"
-        placeholder={fullName}
-        placeholderColorSeed={currentWorkspaceMember?.id}
-        avatarUrl={getAbsoluteImageUrl(currentWorkspaceMember?.avatarUrl)}
+        shape="circle"
+        size={avatarSize}
+        name={fullName}
+        colorSeed={currentWorkspaceMember?.id}
+        src={getAbsoluteImageUrl(currentWorkspaceMember?.avatarUrl)}
       />
       <StyledPersonName>{fullName}</StyledPersonName>
     </StyledChip>

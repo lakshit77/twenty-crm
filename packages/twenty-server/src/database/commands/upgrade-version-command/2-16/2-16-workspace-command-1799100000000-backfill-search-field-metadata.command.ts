@@ -1,7 +1,7 @@
 import { Command } from 'nest-commander';
 import { isDefined } from 'twenty-shared/utils';
 
-import { ActiveOrSuspendedWorkspaceCommandRunner } from 'src/database/commands/command-runners/active-or-suspended-workspace.command-runner';
+import { ProvisionedWorkspaceCommandRunner } from 'src/database/commands/command-runners/provisioned-workspace.command-runner';
 import { WorkspaceIteratorService } from 'src/database/commands/command-runners/workspace-iterator.service';
 import { type RunOnWorkspaceArgs } from 'src/database/commands/command-runners/workspace.command-runner';
 import { buildSearchFieldMetadataBackfillOperations } from 'src/database/commands/upgrade-version-command/2-16/utils/build-search-field-metadata-backfill-operations.util';
@@ -17,7 +17,7 @@ import { WorkspaceMigrationValidateBuildAndRunService } from 'src/engine/workspa
   description:
     'Backfill searchFieldMetadata rows for every object whose searchVector indexes a meaningful field (not only the globally searchable ones). Standard objects mirror their SEARCH_FIELDS_FOR_* set; custom objects get their label-identifier field. Idempotent: existing rows are skipped.',
 })
-export class BackfillSearchFieldMetadataCommand extends ActiveOrSuspendedWorkspaceCommandRunner {
+export class BackfillSearchFieldMetadataCommand extends ProvisionedWorkspaceCommandRunner {
   constructor(
     protected readonly workspaceIteratorService: WorkspaceIteratorService,
     private readonly applicationService: ApplicationService,
@@ -34,11 +34,16 @@ export class BackfillSearchFieldMetadataCommand extends ActiveOrSuspendedWorkspa
     const isDryRun = options.dryRun ?? false;
 
     // The migration runner only invalidates the flat-maps keys a migration touched,
-    // so during a cross-version upgrade earlier commands can leave this map stale.
-    // A stale map breaks the existing-rows dedupe below and re-inserts rows,
-    // tripping IDX_SEARCH_FIELD_METADATA_OBJECT_FIELD_UNIQUE. Recompute from the
-    // database before deriving the create-set.
+    // so during a cross-version upgrade earlier commands can leave these maps stale.
+    // The existing-rows dedupe below compares (objectMetadataId, fieldMetadataId)
+    // pairs across maps: candidate ids resolved from a stale object/field map won't
+    // match the fresh search map's ids, so already-created rows are re-emitted and
+    // the runner (which re-resolves universal identifiers against fresh maps) trips
+    // IDX_SEARCH_FIELD_METADATA_OBJECT_FIELD_UNIQUE. Recompute every map the dedupe
+    // depends on from the database before deriving the create-set.
     await this.workspaceCacheService.invalidateAndRecompute(workspaceId, [
+      'flatObjectMetadataMaps',
+      'flatFieldMetadataMaps',
       'flatSearchFieldMetadataMaps',
     ]);
 

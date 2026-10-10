@@ -1,15 +1,15 @@
-import { isNonEmptyString } from '@sniptt/guards';
 import { RestApiClient } from 'twenty-client-sdk/rest';
 import { enqueueSnackbar } from 'twenty-sdk/front-component';
 
 import { GENERATE_CALL_RECORDING_SUMMARIES_ROUTE_PATH } from 'src/constants/generate-call-recording-summaries-route-path';
-import { TWENTY_FUNCTIONS_URL_ENV_VAR_NAME } from 'src/constants/twenty-functions-url-env-var-name';
 
 type GenerateSummariesResponse = {
   outcome?: string;
   generatedCallRecordingIds?: string[];
   failedCallRecordingIds?: string[];
   erroredCallRecordingIds?: string[];
+  skippedCallRecordingIds?: string[];
+  unavailableCallRecordingIds?: string[];
 };
 
 const buildSnackbarForResponse = (
@@ -50,9 +50,23 @@ const buildSnackbarForResponse = (
     return { message: 'Summary generation failed.', variant: 'error' };
   }
 
+  if ((response.unavailableCallRecordingIds ?? []).length > 0) {
+    return {
+      message: 'Summary unavailable for this event.',
+      variant: 'error',
+    };
+  }
+
+  if ((response.skippedCallRecordingIds ?? []).length > 0) {
+    return {
+      message: 'No usable call recording transcript found for this event.',
+      variant: 'error',
+    };
+  }
+
   return {
-    message: 'No summary to generate for this event.',
-    variant: 'success',
+    message: 'No summary was generated for this event.',
+    variant: 'error',
   };
 };
 
@@ -66,17 +80,8 @@ export const requestCallRecordingSummaryGeneration = async ({
   }
 
   try {
-    // The host injects the isolated functions origin; the legacy /s route
-    // 410s post-cutoff functions and only remains for self-hosting.
-    const functionsBaseUrl = process.env[TWENTY_FUNCTIONS_URL_ENV_VAR_NAME];
-    const client = isNonEmptyString(functionsBaseUrl)
-      ? new RestApiClient({ baseUrl: functionsBaseUrl })
-      : new RestApiClient();
-
-    const response = await client.post<GenerateSummariesResponse>(
-      isNonEmptyString(functionsBaseUrl)
-        ? GENERATE_CALL_RECORDING_SUMMARIES_ROUTE_PATH
-        : `/s${GENERATE_CALL_RECORDING_SUMMARIES_ROUTE_PATH}`,
+    const response = await new RestApiClient().post<GenerateSummariesResponse>(
+      `/s${GENERATE_CALL_RECORDING_SUMMARIES_ROUTE_PATH}`,
       { calendarEventIds },
     );
 

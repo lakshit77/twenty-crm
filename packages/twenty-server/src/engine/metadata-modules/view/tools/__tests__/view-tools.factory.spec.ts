@@ -30,6 +30,7 @@ describe('ViewToolsFactory', () => {
   const mockObjectMetadataId = 'object-metadata-id';
   const mockObjectNameSingular = 'company';
   const mockCalendarFieldMetadataId = 'calendar-field-metadata-id';
+  const mockCalendarEndFieldMetadataId = 'calendar-end-field-metadata-id';
 
   const mockNameFieldMetadataId = 'name-field-metadata-id';
   const mockStageFieldMetadataId = 'stage-field-metadata-id';
@@ -42,6 +43,13 @@ describe('ViewToolsFactory', () => {
         type: FieldMetadataType.DATE_TIME,
         objectMetadataId: mockObjectMetadataId,
         universalIdentifier: 'field-universal-id',
+      },
+      'end-field-universal-id': {
+        id: mockCalendarEndFieldMetadataId,
+        name: 'endsAt',
+        type: FieldMetadataType.DATE_TIME,
+        objectMetadataId: mockObjectMetadataId,
+        universalIdentifier: 'end-field-universal-id',
       },
       'name-field-universal-id': {
         id: mockNameFieldMetadataId,
@@ -280,11 +288,12 @@ describe('ViewToolsFactory', () => {
 
         expect(
           viewQueryParamsService.resolveViewToQueryParams,
-        ).toHaveBeenCalledWith(
-          mockViewId,
-          mockWorkspaceId,
-          'workspace-member-id',
-        );
+        ).toHaveBeenCalledWith({
+          viewId: mockViewId,
+          workspaceId: mockWorkspaceId,
+          currentWorkspaceMemberId: 'workspace-member-id',
+          currentUserWorkspaceId: mockUserWorkspaceId,
+        });
         expect(result).toEqual(mockQueryParams);
       });
     });
@@ -621,7 +630,7 @@ describe('ViewToolsFactory', () => {
           name: 'Pipeline',
           objectMetadataId: mockObjectMetadataId,
           type: ViewType.TABLE,
-          icon: 'IconList',
+          icon: 'IconTable',
           visibility: ViewVisibility.WORKSPACE,
           viewFields: [{}, {}],
           viewFilters: [{}],
@@ -683,7 +692,7 @@ describe('ViewToolsFactory', () => {
           name: 'Pipeline',
           objectMetadataId: mockObjectMetadataId,
           type: ViewType.TABLE,
-          icon: 'IconList',
+          icon: 'IconTable',
           visibility: ViewVisibility.WORKSPACE,
           fieldCount: 2,
           filterCount: 1,
@@ -697,7 +706,7 @@ describe('ViewToolsFactory', () => {
           name: 'By Id',
           objectMetadataId: mockObjectMetadataId,
           type: ViewType.TABLE,
-          icon: 'IconList',
+          icon: 'IconTable',
           visibility: ViewVisibility.WORKSPACE,
           viewFields: [{}],
         } as any);
@@ -781,6 +790,40 @@ describe('ViewToolsFactory', () => {
           }),
         );
         expect(viewService.createOne).not.toHaveBeenCalled();
+      });
+
+      it('should resolve and update the calendar end field on an existing view', async () => {
+        const existingView = {
+          ...mockView,
+          type: ViewType.CALENDAR,
+          visibility: ViewVisibility.WORKSPACE,
+        };
+
+        viewService.findById.mockResolvedValue(existingView as any);
+        completeViewUpsertService.upsertCompleteView.mockResolvedValue({
+          ...existingView,
+          calendarEndFieldMetadataId: mockCalendarEndFieldMetadataId,
+        } as any);
+
+        const tools = viewToolsFactory.generateWriteTools(
+          mockWorkspaceId,
+          mockUserWorkspaceId,
+        );
+
+        await callExecute(tools['upsert_complete_view'], {
+          id: mockViewId,
+          calendarEndFieldName: 'endsAt',
+        });
+
+        expect(
+          completeViewUpsertService.upsertCompleteView,
+        ).toHaveBeenCalledWith(
+          expect.objectContaining({
+            existingViewId: mockViewId,
+            objectMetadataId: mockObjectMetadataId,
+            calendarEndFieldMetadataId: mockCalendarEndFieldMetadataId,
+          }),
+        );
       });
 
       it('should pass an empty sorts array through to upsertCompleteView on update', async () => {

@@ -13,6 +13,8 @@ import {
   type EachTestingContext,
 } from 'twenty-shared/testing';
 import {
+  type FieldMetadataComplexOption,
+  type FieldMetadataDefaultOption,
   FieldMetadataType,
   type EnumFieldMetadataType,
   ViewFilterOperand,
@@ -20,10 +22,6 @@ import {
 } from 'twenty-shared/types';
 import { isDefined } from 'twenty-shared/utils';
 
-import {
-  type FieldMetadataComplexOption,
-  type FieldMetadataDefaultOption,
-} from 'src/engine/metadata-modules/field-metadata/dtos/options.input';
 import { type ViewFilterValue } from 'src/engine/metadata-modules/view-filter/types/view-filter-value.type';
 
 type Option = FieldMetadataDefaultOption | FieldMetadataComplexOption;
@@ -309,6 +307,110 @@ describe('update-one-field-metadata-view-filters-side-effect-v2', () => {
       },
     );
 
+    it('should update a related view filter with a scalar option value', async () => {
+      const { createOneField, createdView } =
+        await createObjectSelectFieldAndView({
+          options: ALL_OPTIONS,
+          type: fieldType,
+        });
+
+      const {
+        data: { createViewFilter: createdViewFilter },
+      } = await createOneViewFilter({
+        input: {
+          viewId: createdView.id,
+          fieldMetadataId: createOneField.id,
+          operand: operandForFieldType,
+          value: ALL_OPTIONS[0].value,
+        },
+        expectToFail: false,
+        gqlFields: `
+          id
+        `,
+      });
+
+      const optionsWithIds = createOneField.options;
+
+      if (!isDefined(optionsWithIds)) {
+        throw new Error('optionsWithIds is not defined');
+      }
+
+      const updatedOption = fakeOptionUpdate(optionsWithIds[0]);
+
+      await updateOneFieldMetadata({
+        expectToFail: false,
+        input: {
+          idToUpdate: createOneField.id,
+          updatePayload: {
+            options: [updatedOption, ...optionsWithIds.slice(1)],
+          },
+        },
+        gqlFields: `
+          id
+        `,
+      });
+
+      const updatedViewFilter = await findViewFilterWithRestApi(
+        createdViewFilter.id,
+      );
+
+      expect(updatedViewFilter?.value).toEqual([updatedOption.value]);
+    });
+
+    it('should leave a value-less view filter unchanged', async () => {
+      const { createOneField, createdView } =
+        await createObjectSelectFieldAndView({
+          options: ALL_OPTIONS,
+          type: fieldType,
+        });
+
+      const {
+        data: { createViewFilter: createdViewFilter },
+      } = await createOneViewFilter({
+        input: {
+          viewId: createdView.id,
+          fieldMetadataId: createOneField.id,
+          operand: ViewFilterOperand.IS_NOT_EMPTY,
+          value: '',
+        },
+        expectToFail: false,
+        gqlFields: `
+          id
+        `,
+      });
+
+      const optionsWithIds = createOneField.options;
+
+      if (!isDefined(optionsWithIds)) {
+        throw new Error('optionsWithIds is not defined');
+      }
+
+      await updateOneFieldMetadata({
+        expectToFail: false,
+        input: {
+          idToUpdate: createOneField.id,
+          updatePayload: {
+            options: [
+              fakeOptionUpdate(optionsWithIds[0]),
+              ...optionsWithIds.slice(1),
+            ],
+          },
+        },
+        gqlFields: `
+          id
+        `,
+      });
+
+      const updatedViewFilter = await findViewFilterWithRestApi(
+        createdViewFilter.id,
+      );
+
+      expect(updatedViewFilter).toMatchObject({
+        operand: ViewFilterOperand.IS_NOT_EMPTY,
+        value: '',
+      });
+    });
+
     const failingTestCases: EachTestingContext<{
       createViewFilterValue: unknown;
     }>[] = [
@@ -347,9 +449,7 @@ describe('update-one-field-metadata-view-filters-side-effect-v2', () => {
         });
 
         expect(errors).toBeDefined();
-        expect(errors![0].extensions.code).toBe(
-          'METADATA_VALIDATION_FAILED',
-        );
+        expect(errors![0].extensions.code).toBe('METADATA_VALIDATION_FAILED');
       },
     );
   });

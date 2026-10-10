@@ -1,11 +1,17 @@
+import { type ClientRequest, type IncomingMessage } from 'node:http';
+import { PassThrough, Readable } from 'node:stream';
+
+import { isUndefined } from '@sniptt/guards';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CALL_RECORDING_VIDEO_FIELD_UNIVERSAL_IDENTIFIER } from 'src/constants/call-recording-video-field-universal-identifier';
+import { CALL_RECORDING_VIDEO_FIELD_UNIVERSAL_IDENTIFIER } from 'src/constants/universal-identifiers';
 import { importCallRecordingMedia } from 'src/logic-functions/flows/import-call-recording-media.util';
+import { type CallRecordingUpdateFields } from 'src/logic-functions/types/call-recording-update-fields.type';
+
+const saveProgressMock = vi.fn().mockResolvedValue(undefined);
 
 const mutationMock = vi.hoisted(() => vi.fn());
-const getRecallRecordingMock = vi.hoisted(() => vi.fn());
-const putMediaDownloadBodyToUploadTargetMock = vi.hoisted(() => vi.fn());
+const requestOverHttpsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('twenty-client-sdk/metadata', () => ({
   MetadataApiClient: class {
@@ -13,19 +19,17 @@ vi.mock('twenty-client-sdk/metadata', () => ({
   },
 }));
 
-vi.mock('src/logic-functions/recall-api/get-recall-recording.util', () => ({
-  getRecallRecording: getRecallRecordingMock,
-}));
+vi.mock('node:https', async () => {
+  const actualHttps =
+    await vi.importActual<typeof import('node:https')>('node:https');
 
-vi.mock(
-  'src/logic-functions/flows/put-media-download-body-to-upload-target.util',
-  () => ({
-    putMediaDownloadBodyToUploadTarget: putMediaDownloadBodyToUploadTargetMock,
-  }),
-);
+  return { ...actualHttps, request: requestOverHttpsMock };
+});
 
 const VIDEO_URL = 'https://media.example.com/video.mp4';
 const AUDIO_URL = 'https://media.example.com/audio.mp3';
+const RECALL_RECORDING_URL =
+  'https://us-west-2.recall.ai/api/v1/recording/recall-recording-1/';
 
 const RECORDING_WITH_MEDIA = {
   id: 'recall-recording-1',
@@ -34,6 +38,8 @@ const RECORDING_WITH_MEDIA = {
     audio_mixed: { download_url: AUDIO_URL },
   },
 };
+
+let buildRecallRecordingResponse: () => Response;
 
 const uploadUrlForFilename = (filename: string) =>
   `https://storage.example.com/${filename}`;
@@ -88,6 +94,10 @@ const stubFetch = ({
       throw new Error('Upload requests should go through the upload bridge');
     }
 
+    if (url === RECALL_RECORDING_URL) {
+      return Promise.resolve(buildRecallRecordingResponse());
+    }
+
     const downloadResponse = downloadsByUrl[url];
 
     if (downloadResponse === undefined) {
@@ -139,23 +149,51 @@ const stubDirectUpload = ({
   });
 };
 
-const getUploadBridgeCall = (fileName: string) =>
-  putMediaDownloadBodyToUploadTargetMock.mock.calls.find(
-    ([uploadInput]) => uploadInput.fileName === fileName,
+const buildUploadResponse = (): IncomingMessage => {
+  const uploadResponse = Readable.from([]) as IncomingMessage;
+
+  uploadResponse.statusCode = 200;
+
+  return uploadResponse;
+};
+
+const uploadedBytesByUrl = new Map<string, number[]>();
+
+const stubUploadRequests = () => {
+  uploadedBytesByUrl.clear();
+  requestOverHttpsMock.mockReset();
+  requestOverHttpsMock.mockImplementation((uploadUrl: URL) => {
+    const uploadRequest = new PassThrough();
+    const uploadedBytes: number[] = [];
+
+    uploadedBytesByUrl.set(uploadUrl.href, uploadedBytes);
+    uploadRequest.on('data', (chunk: Buffer) => {
+      uploadedBytes.push(...chunk);
+    });
+    uploadRequest.on('finish', () => {
+      uploadRequest.emit('response', buildUploadResponse());
+    });
+
+    return uploadRequest as unknown as ClientRequest;
+  });
+};
+
+const getUploadRequestCall = (fileName: string) =>
+  requestOverHttpsMock.mock.calls.find(
+    ([uploadUrl]) => uploadUrl.href === uploadUrlForFilename(fileName),
   );
 
 describe('importCallRecordingMedia', () => {
   beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.stubEnv('RECALL_API_KEY', 'recall-api-key');
+    vi.stubEnv('RECALL_REGION', 'us-west-2');
     mutationMock.mockReset();
-    getRecallRecordingMock.mockReset();
-    putMediaDownloadBodyToUploadTargetMock.mockReset();
-    putMediaDownloadBodyToUploadTargetMock.mockResolvedValue(undefined);
-    getRecallRecordingMock.mockResolvedValue({
-      ok: true,
-      recording: RECORDING_WITH_MEDIA,
-    });
+    saveProgressMock.mockReset().mockResolvedValue(undefined);
+    stubUploadRequests();
+    buildRecallRecordingResponse = () =>
+      new Response(JSON.stringify(RECORDING_WITH_MEDIA), { status: 200 });
     stubDirectUpload({
       finalFileIdByFilename: {
         'video.mp4': 'file-video-1',
@@ -172,42 +210,55 @@ describe('importCallRecordingMedia', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('streams and uploads every missing artifact', async () => {
-    const updateFields = await importCallRecordingMedia({
+    const { updateData } = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: false,
       hasVideo: false,
     });
 
-    expect(updateFields).toEqual({
+    expect(updateData).toEqual({
       video: [{ fileId: 'file-video-1', label: 'video.mp4' }],
       audio: [{ fileId: 'file-audio-1', label: 'audio.mp3' }],
     });
-    expect(getUploadBridgeCall('video.mp4')).toMatchObject([
-      expect.objectContaining({
-        fileName: 'video.mp4',
-        sizeBytes: 8,
-        uploadTarget: expect.objectContaining({
-          uploadUrl: uploadUrlForFilename('video.mp4'),
-        }),
-      }),
-    ]);
-    expect(getUploadBridgeCall('audio.mp3')).toMatchObject([
-      expect.objectContaining({
-        fileName: 'audio.mp3',
-        sizeBytes: 8,
-        uploadTarget: expect.objectContaining({
-          uploadUrl: uploadUrlForFilename('audio.mp3'),
-        }),
-      }),
-    ]);
+    const [videoUploadUrl, videoUploadOptions] =
+      getUploadRequestCall('video.mp4') ?? [];
+    expect(videoUploadUrl?.href).toBe(uploadUrlForFilename('video.mp4'));
+    expect(videoUploadOptions).toMatchObject({
+      method: 'PUT',
+      headers: {
+        'Content-Length': 8,
+        'Content-Type': 'application/octet-stream',
+      },
+    });
+    expect(
+      uploadedBytesByUrl.get(uploadUrlForFilename('video.mp4')),
+    ).toHaveLength(8);
+    const [audioUploadUrl, audioUploadOptions] =
+      getUploadRequestCall('audio.mp3') ?? [];
+    expect(audioUploadUrl?.href).toBe(uploadUrlForFilename('audio.mp3'));
+    expect(audioUploadOptions).toMatchObject({
+      method: 'PUT',
+      headers: {
+        'Content-Length': 8,
+        'Content-Type': 'application/octet-stream',
+      },
+    });
+    expect(
+      uploadedBytesByUrl.get(uploadUrlForFilename('audio.mp3')),
+    ).toHaveLength(8);
   });
 
   it('declares the presigned upload with the download size, folder and field identifier', async () => {
     await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: true,
@@ -237,29 +288,31 @@ describe('importCallRecordingMedia', () => {
   });
 
   it('skips artifacts already on the record', async () => {
-    const updateFields = await importCallRecordingMedia({
+    const { updateData } = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: false,
       hasVideo: true,
     });
 
-    expect(updateFields).toEqual({
+    expect(updateData).toEqual({
       audio: [{ fileId: 'file-audio-1', label: 'audio.mp3' }],
     });
-    expect(getUploadBridgeCall('video.mp4')).toBeUndefined();
+    expect(getUploadRequestCall('video.mp4')).toBeUndefined();
   });
 
   it('does not fetch the recording when both artifacts are present', async () => {
-    const updateFields = await importCallRecordingMedia({
+    const { updateData } = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: true,
       hasVideo: true,
     });
 
-    expect(updateFields).toEqual({});
-    expect(getRecallRecordingMock).not.toHaveBeenCalled();
+    expect(updateData).toEqual({});
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(mutationMock).not.toHaveBeenCalled();
   });
 
@@ -285,24 +338,27 @@ describe('importCallRecordingMedia', () => {
       },
     });
 
-    const updateFields = await importCallRecordingMedia({
+    const { updateData, hasRetryableFailure } = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: false,
       hasVideo: false,
     });
 
-    expect(updateFields).toEqual({
+    expect(updateData).toEqual({
       audio: [{ fileId: 'file-audio-1', label: 'audio.mp3' }],
+      callRecorderFailureReason: 'video_import_failed',
     });
+    expect(hasRetryableFailure).toBe(false);
     expect(cancelMock).toHaveBeenCalledTimes(1);
-    expect(getUploadBridgeCall('video.mp4')).toBeUndefined();
+    expect(getUploadRequestCall('video.mp4')).toBeUndefined();
     expect(console.warn).toHaveBeenCalledWith(
       expect.stringContaining('upload target exploded'),
     );
   });
 
-  it('omits an artifact and warns when the download has no content length', async () => {
+  it('keeps audio and settles video when its download has no content length', async () => {
     const cancelMock = vi.fn().mockRejectedValue(new Error('cancel exploded'));
 
     stubFetch({
@@ -314,17 +370,20 @@ describe('importCallRecordingMedia', () => {
       },
     });
 
-    const updateFields = await importCallRecordingMedia({
+    const { updateData, hasRetryableFailure } = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: false,
       hasVideo: false,
     });
 
-    expect(updateFields).toEqual({
+    expect(updateData).toEqual({
       audio: [{ fileId: 'file-audio-1', label: 'audio.mp3' }],
+      callRecorderFailureReason: 'video_import_failed',
     });
-    expect(getUploadBridgeCall('video.mp4')).toBeUndefined();
+    expect(hasRetryableFailure).toBe(false);
+    expect(getUploadRequestCall('video.mp4')).toBeUndefined();
     expect(console.warn).toHaveBeenCalledWith(
       expect.stringContaining('content-length'),
     );
@@ -333,38 +392,50 @@ describe('importCallRecordingMedia', () => {
     );
   });
 
-  it('returns nothing when the recording exposes no media urls', async () => {
-    getRecallRecordingMock.mockResolvedValue({
-      ok: true,
-      recording: { id: 'recall-recording-1' },
-    });
+  it('returns nothing and asks for no redelivery when the recording exposes no media urls', async () => {
+    buildRecallRecordingResponse = () =>
+      new Response(JSON.stringify({ id: 'recall-recording-1' }), {
+        status: 200,
+      });
 
-    const updateFields = await importCallRecordingMedia({
+    const mediaImportResult = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: false,
       hasVideo: false,
     });
 
-    expect(updateFields).toEqual({});
+    expect(mediaImportResult).toEqual({
+      updateData: {},
+      hasRetryableFailure: false,
+      isRecordingGone: false,
+    });
     expect(mutationMock).not.toHaveBeenCalled();
   });
 
   it('warns and returns nothing when the recording fetch fails', async () => {
-    getRecallRecordingMock.mockResolvedValue({
-      ok: false,
-      status: 500,
-      errorMessage: 'recording boom',
-    });
+    buildRecallRecordingResponse = () =>
+      new Response(JSON.stringify({ error: 'recording boom' }), {
+        status: 500,
+      });
+    vi.useFakeTimers();
 
-    const updateFields = await importCallRecordingMedia({
+    const mediaImportResultPromise = importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: false,
       hasVideo: false,
     });
+    await vi.runAllTimersAsync();
+    const mediaImportResult = await mediaImportResultPromise;
 
-    expect(updateFields).toEqual({});
+    expect(mediaImportResult).toEqual({
+      updateData: {},
+      hasRetryableFailure: true,
+      isRecordingGone: false,
+    });
     expect(mutationMock).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalledWith(
       expect.stringContaining('recording boom'),
@@ -384,18 +455,19 @@ describe('importCallRecordingMedia', () => {
       },
     });
 
-    const updateFields = await importCallRecordingMedia({
+    const { updateData } = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: false,
       hasVideo: false,
     });
 
-    expect(updateFields).toEqual({
+    expect(updateData).toEqual({
       audio: [{ fileId: 'file-audio-1', label: 'audio.mp3' }],
       callRecorderFailureReason: 'video_file_too_large',
     });
-    expect(getUploadBridgeCall('video.mp4')).toBeUndefined();
+    expect(getUploadRequestCall('video.mp4')).toBeUndefined();
     expect(cancelMock).toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalledWith(
       expect.stringContaining('artifact-too-large'),
@@ -403,6 +475,64 @@ describe('importCallRecordingMedia', () => {
     expect(console.warn).toHaveBeenCalledWith(
       expect.stringContaining('download-body-cancel-failed'),
     );
+  });
+
+  it('reports the recording gone without asking for a redelivery when Recall answers 404', async () => {
+    buildRecallRecordingResponse = () =>
+      new Response(JSON.stringify({ detail: 'Not found.' }), { status: 404 });
+
+    const mediaImportResult = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
+      callRecordingId: 'call-recording-1',
+      externalRecordingId: 'recall-recording-1',
+      hasAudio: false,
+      hasVideo: false,
+    });
+
+    expect(mediaImportResult).toEqual({
+      updateData: {},
+      hasRetryableFailure: false,
+      isRecordingGone: true,
+    });
+    expect(mutationMock).not.toHaveBeenCalled();
+  });
+
+  it('records an expired marker for a deleted artifact without an expiry field', async () => {
+    buildRecallRecordingResponse = () =>
+      new Response(
+        JSON.stringify({
+          id: 'recall-recording-1',
+          expires_at: '2026-09-14T14:09:46.365456Z',
+          media_shortcuts: {
+            video_mixed: { status: { code: 'deleted' } },
+            audio_mixed: { download_url: AUDIO_URL, status: { code: 'done' } },
+          },
+        }),
+        { status: 200 },
+      );
+    stubFetch({
+      downloadsByUrl: {
+        [AUDIO_URL]: buildDownloadResponse({ contentLengthBytes: 8 }),
+      },
+    });
+
+    const mediaImportResult = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
+      callRecordingId: 'call-recording-1',
+      externalRecordingId: 'recall-recording-1',
+      hasAudio: false,
+      hasVideo: false,
+    });
+
+    expect(mediaImportResult).toEqual({
+      updateData: {
+        audio: [{ fileId: 'file-audio-1', label: 'audio.mp3' }],
+        callRecorderFailureReason: 'video_import_expired',
+      },
+      hasRetryableFailure: false,
+      isRecordingGone: false,
+    });
+    expect(getUploadRequestCall('video.mp4')).toBeUndefined();
   });
 
   it('records both markers when video and audio exceed the cap', async () => {
@@ -417,14 +547,15 @@ describe('importCallRecordingMedia', () => {
       },
     });
 
-    const updateFields = await importCallRecordingMedia({
+    const { updateData } = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: false,
       hasVideo: false,
     });
 
-    expect(updateFields).toEqual({
+    expect(updateData).toEqual({
       callRecorderFailureReason: 'video_file_too_large,audio_file_too_large',
     });
     expect(mutationMock).not.toHaveBeenCalled();
@@ -439,15 +570,109 @@ describe('importCallRecordingMedia', () => {
       },
     });
 
-    const updateFields = await importCallRecordingMedia({
+    const { updateData } = await importCallRecordingMedia({
+      saveProgress: saveProgressMock,
       callRecordingId: 'call-recording-1',
       externalRecordingId: 'recall-recording-1',
       hasAudio: true,
       hasVideo: false,
     });
 
-    expect(updateFields).toEqual({
+    expect(updateData).toEqual({
       video: [{ fileId: 'file-video-1', label: 'video.mp4' }],
     });
+  });
+  it('checkpoints video before audio fails and resumes with only the missing file', async () => {
+    const saved: Pick<CallRecordingUpdateFields, 'audio' | 'video'> = {};
+    saveProgressMock.mockImplementation(async (data) =>
+      Object.assign(saved, data),
+    );
+    const fetchImplementation = fetchMock.getMockImplementation();
+
+    fetchMock.mockImplementation((url, options) => {
+      if (url === AUDIO_URL) {
+        expect(saved.video).toEqual([
+          { fileId: 'file-video-1', label: 'video.mp4' },
+        ]);
+        return Promise.reject(
+          new DOMException('Transfer timed out', 'TimeoutError'),
+        );
+      }
+      return fetchImplementation?.(url, options);
+    });
+
+    const firstAttempt = await importCallRecordingMedia({
+      callRecordingId: 'call-recording-1',
+      externalRecordingId: 'recall-recording-1',
+      hasVideo: false,
+      hasAudio: false,
+      saveProgress: saveProgressMock,
+    });
+
+    expect(firstAttempt.hasRetryableFailure).toBe(true);
+    expect(saved.audio).toBeUndefined();
+
+    stubFetch({
+      downloadsByUrl: {
+        [AUDIO_URL]: buildDownloadResponse({ contentLengthBytes: 8 }),
+      },
+    });
+    const secondAttempt = await importCallRecordingMedia({
+      callRecordingId: 'call-recording-1',
+      externalRecordingId: 'recall-recording-1',
+      hasVideo: !isUndefined(saved.video),
+      hasAudio: false,
+      saveProgress: saveProgressMock,
+    });
+
+    expect(secondAttempt.hasRetryableFailure).toBe(false);
+    expect(saved.audio).toEqual([
+      { fileId: 'file-audio-1', label: 'audio.mp3' },
+    ]);
+    expect(fetchMock.mock.calls.some(([url]) => url === VIDEO_URL)).toBe(false);
+  });
+
+  it('stops before the next transfer when saving the first file fails', async () => {
+    saveProgressMock.mockRejectedValue(new Error('Progress save failed'));
+
+    await expect(
+      importCallRecordingMedia({
+        callRecordingId: 'call-recording-1',
+        externalRecordingId: 'recall-recording-1',
+        hasVideo: false,
+        hasAudio: false,
+        saveProgress: saveProgressMock,
+      }),
+    ).rejects.toThrow('Progress save failed');
+
+    expect(fetchMock.mock.calls.some(([url]) => url === AUDIO_URL)).toBe(false);
+  });
+
+  it('keeps an existing size marker while settling the other expired artifact', async () => {
+    buildRecallRecordingResponse = () =>
+      new Response(
+        JSON.stringify({
+          media_shortcuts: {
+            video_mixed: { status: { code: 'deleted' } },
+            audio_mixed: { status: { code: 'deleted' } },
+          },
+        }),
+        { status: 200 },
+      );
+
+    const result = await importCallRecordingMedia({
+      callRecordingId: 'call-recording-1',
+      externalRecordingId: 'recall-recording-1',
+      hasVideo: false,
+      hasAudio: false,
+      callRecorderFailureReason: 'video_file_too_large',
+      saveProgress: saveProgressMock,
+    });
+
+    expect(result.updateData).toEqual({
+      callRecorderFailureReason: 'video_file_too_large,audio_import_expired',
+    });
+    expect(saveProgressMock).toHaveBeenCalledExactlyOnceWith(result.updateData);
+    expect(requestOverHttpsMock).not.toHaveBeenCalled();
   });
 });

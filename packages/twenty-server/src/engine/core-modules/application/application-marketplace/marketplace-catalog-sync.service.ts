@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-import { isDefined } from 'twenty-shared/utils';
+import { isDefined, isValidUuid } from 'twenty-shared/utils';
 
 import { MarketplaceService } from 'src/engine/core-modules/application/application-marketplace/marketplace.service';
 import { ApplicationRegistrationAssetService } from 'src/engine/core-modules/application/application-registration/application-registration-asset.service';
+import { ApplicationRegistrationLookupService } from 'src/engine/core-modules/application/application-registration/application-registration-lookup/application-registration-lookup.service';
 import { ApplicationRegistrationService } from 'src/engine/core-modules/application/application-registration/application-registration.service';
 import { ApplicationRegistrationSourceType } from 'src/engine/core-modules/application/application-registration/enums/application-registration-source-type.enum';
 import { areRegistrationAssetsStored } from 'src/engine/core-modules/application/application-registration/utils/are-registration-assets-stored.util';
@@ -14,6 +15,7 @@ export class MarketplaceCatalogSyncService {
 
   constructor(
     private readonly applicationRegistrationService: ApplicationRegistrationService,
+    private readonly applicationRegistrationLookupService: ApplicationRegistrationLookupService,
     private readonly applicationRegistrationAssetService: ApplicationRegistrationAssetService,
     private readonly marketplaceService: MarketplaceService,
   ) {}
@@ -46,25 +48,28 @@ export class MarketplaceCatalogSyncService {
         const universalIdentifier =
           fetchedManifest.application.universalIdentifier;
 
+        if (!isValidUuid(universalIdentifier)) {
+          this.logger.warn(
+            `Skipping ${pkg.name}: universal identifier ${universalIdentifier} is not a valid UUID`,
+          );
+          continue;
+        }
+
         const previousVersion = (
-          await this.applicationRegistrationService.findOneByUniversalIdentifier(
+          await this.applicationRegistrationLookupService.findOneByUniversalIdentifierGlobal(
             universalIdentifier,
           )
         )?.latestAvailableVersion;
 
-        await this.applicationRegistrationService.upsertFromCatalog({
-          universalIdentifier,
-          name: fetchedManifest.application.displayName ?? pkg.name,
-          sourceType: ApplicationRegistrationSourceType.NPM,
-          sourcePackage: pkg.name,
-          latestAvailableVersion: pkg.version ?? null,
-          manifest: fetchedManifest,
-        });
-
         const registration =
-          await this.applicationRegistrationService.findOneByUniversalIdentifier(
+          await this.applicationRegistrationService.upsertFromCatalog({
             universalIdentifier,
-          );
+            name: fetchedManifest.application.displayName ?? pkg.name,
+            sourceType: ApplicationRegistrationSourceType.NPM,
+            sourcePackage: pkg.name,
+            latestAvailableVersion: pkg.version ?? null,
+            manifest: fetchedManifest,
+          });
 
         if (!isDefined(registration)) {
           continue;
@@ -73,7 +78,8 @@ export class MarketplaceCatalogSyncService {
         // Rehost the logo and gallery images from the registry CDN so display
         // urls are served from fileIds like every other source. Skipped when
         // the version is unchanged and the files are already stored; the
-        // query-time url builder falls back to CDN urls until they are.
+        // query-time url builder falls back to CDN urls until they are. On an
+        // unchanged version, only assets missing a stored file are fetched.
         if (
           previousVersion !== pkg.version ||
           !areRegistrationAssetsStored(
@@ -91,6 +97,7 @@ export class MarketplaceCatalogSyncService {
                   pkg.version,
                   path,
                 ),
+              skipAlreadyStoredPaths: previousVersion === pkg.version,
             },
           );
         }

@@ -1,31 +1,30 @@
-import { useLingui } from '@lingui/react/macro';
-import { useCallback, useState } from 'react';
-
-import { useCreateUnsubscribeTopic } from '@/settings/unsubscribe-topics/hooks/useCreateUnsubscribeTopic';
-import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
 import { SaveAndCancelButtons } from '@/settings/components/SaveAndCancelButtons/SaveAndCancelButtons';
-import { SettingsOptionCardContentToggle } from '@/settings/components/SettingsOptions/SettingsOptionCardContentToggle';
+import { SettingsOptionCardContentSwitch } from '@/settings/components/SettingsOptions/SettingsOptionCardContentSwitch';
 import { SettingsPageContainer } from '@/settings/components/SettingsPageContainer';
 import { SettingsPageLayout } from '@/settings/components/layout/SettingsPageLayout';
-import { useSnackBar } from '@/ui/feedback/snack-bar-manager/hooks/useSnackBar';
+import { useCreateUnsubscribeTopic } from '@/settings/unsubscribe-topics/hooks/useCreateUnsubscribeTopic';
+import { SETTINGS_UNSUBSCRIBE_TAB_IDS } from '@/settings/unsubscribers/constants/SettingsUnsubscribeTabIds';
 import { SettingsTextInput } from '@/ui/input/components/SettingsTextInput';
+import { useIsFeatureEnabled } from '@/workspace/hooks/useIsFeatureEnabled';
+import { useLingui } from '@lingui/react/macro';
+import { useCallback, useState } from 'react';
 import { FeatureFlagKey, SettingsPath } from 'twenty-shared/types';
 import { getSettingsPath } from 'twenty-shared/utils';
-import { UnsubscribeTopicVisibility } from '~/generated-metadata/graphql';
+import { useToast } from 'twenty-ui/components/feedback';
+import { Section } from 'twenty-ui/components/layout';
 import { IconEye } from 'twenty-ui/icon';
-import { H2Title } from 'twenty-ui/typography';
-import { Section } from 'twenty-ui/layout';
-import { Card } from 'twenty-ui/surfaces';
-import { NotFound } from '~/pages/not-found/NotFound';
+import { Card } from 'twenty-ui/primitives/surfaces';
+import { UnsubscribeTopicVisibility } from '~/generated-metadata/graphql';
 import { useNavigateSettings } from '~/hooks/useNavigateSettings';
+import { NotFound } from '~/pages/not-found/NotFound';
 
 export const SettingsWorkspaceNewUnsubscribeTopic = () => {
   const { t } = useLingui();
   const navigate = useNavigateSettings();
-  const { enqueueErrorSnackBar } = useSnackBar();
+  const { enqueueToast } = useToast();
   const { createUnsubscribeTopic, loading } = useCreateUnsubscribeTopic();
-  const isEmailGroupEnabled = useIsFeatureEnabled(
-    FeatureFlagKey.IS_EMAIL_GROUP_ENABLED,
+  const isMessageCampaignEnabled = useIsFeatureEnabled(
+    FeatureFlagKey.IS_MESSAGE_CAMPAIGN_ENABLED,
   );
 
   const [name, setName] = useState('');
@@ -33,6 +32,18 @@ export const SettingsWorkspaceNewUnsubscribeTopic = () => {
   const [isPublic, setIsPublic] = useState(false);
 
   const canSave = name.length > 0 && !loading;
+
+  const navigateToTopics = useCallback(
+    () =>
+      navigate(
+        SettingsPath.Unsubscribe,
+        undefined,
+        undefined,
+        undefined,
+        SETTINGS_UNSUBSCRIBE_TAB_IDS.TOPICS,
+      ),
+    [navigate],
+  );
 
   const handleSave = useCallback(async () => {
     try {
@@ -50,11 +61,12 @@ export const SettingsWorkspaceNewUnsubscribeTopic = () => {
           unsubscribeTopicId,
         });
       } else {
-        navigate(SettingsPath.WorkspaceCommunications);
+        navigateToTopics();
       }
     } catch {
-      enqueueErrorSnackBar({
-        message: t`Failed to create unsubscribe topic.`,
+      enqueueToast({
+        variant: 'error',
+        children: t`Failed to create unsubscribe topic.`,
       });
     }
   }, [
@@ -63,11 +75,12 @@ export const SettingsWorkspaceNewUnsubscribeTopic = () => {
     description,
     isPublic,
     navigate,
-    enqueueErrorSnackBar,
+    navigateToTopics,
+    enqueueToast,
     t,
   ]);
 
-  if (!isEmailGroupEnabled) {
+  if (!isMessageCampaignEnabled) {
     return <NotFound />;
   }
 
@@ -80,8 +93,17 @@ export const SettingsWorkspaceNewUnsubscribeTopic = () => {
           href: getSettingsPath(SettingsPath.General),
         },
         {
-          children: t`Communications`,
+          children: t`Communication`,
           href: getSettingsPath(SettingsPath.WorkspaceCommunications),
+        },
+        {
+          children: t`Unsubscribe`,
+          href: getSettingsPath(
+            SettingsPath.Unsubscribe,
+            undefined,
+            undefined,
+            SETTINGS_UNSUBSCRIBE_TAB_IDS.TOPICS,
+          ),
         },
         { children: t`New Unsubscribe Topic` },
       ]}
@@ -90,14 +112,14 @@ export const SettingsWorkspaceNewUnsubscribeTopic = () => {
           isSaveDisabled={!canSave}
           isCancelDisabled={loading}
           isLoading={loading}
-          onCancel={() => navigate(SettingsPath.WorkspaceCommunications)}
+          onCancel={navigateToTopics}
           onSave={handleSave}
         />
       }
     >
       <SettingsPageContainer>
-        <Section>
-          <H2Title
+        <Section.Root>
+          <Section.Header
             title={t`Name`}
             description={t`The name recipients see for this topic.`}
           />
@@ -110,9 +132,9 @@ export const SettingsWorkspaceNewUnsubscribeTopic = () => {
             disabled={loading}
             fullWidth
           />
-        </Section>
-        <Section>
-          <H2Title
+        </Section.Root>
+        <Section.Root>
+          <Section.Header
             title={t`Description`}
             description={t`Optional context shown to recipients on the preferences page.`}
           />
@@ -124,22 +146,22 @@ export const SettingsWorkspaceNewUnsubscribeTopic = () => {
             disabled={loading}
             fullWidth
           />
-        </Section>
-        <Section>
-          <H2Title
+        </Section.Root>
+        <Section.Root>
+          <Section.Header
             title={t`Visibility`}
             description={t`Control whether recipients can find and manage this topic.`}
           />
-          <Card rounded>
-            <SettingsOptionCardContentToggle
+          <Card.Root rounded>
+            <SettingsOptionCardContentSwitch
               Icon={IconEye}
               title={t`Listed on the unsubscribe page`}
               description={t`Public topics appear on the recipient preferences page.`}
               checked={isPublic}
               onChange={setIsPublic}
             />
-          </Card>
-        </Section>
+          </Card.Root>
+        </Section.Root>
       </SettingsPageContainer>
     </SettingsPageLayout>
   );

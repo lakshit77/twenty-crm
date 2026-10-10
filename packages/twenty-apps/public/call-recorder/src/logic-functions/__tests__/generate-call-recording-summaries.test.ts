@@ -1,46 +1,24 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type RoutePayload } from 'twenty-sdk/define';
 
 import { generateCallRecordingSummariesHandler } from 'src/logic-functions/generate-call-recording-summaries';
 
-const findCallRecordingIdsMissingSummaryMock = vi.hoisted(() => vi.fn());
-const findCallRecordingIdsForCalendarEventsMock = vi.hoisted(() => vi.fn());
-const generateMissingCallRecordingSummariesMock = vi.hoisted(() => vi.fn());
-const isCallRecordingSummaryEnabledMock = vi.hoisted(() => vi.fn());
+const queryMock = vi.hoisted(() => vi.fn());
+const mutationMock = vi.hoisted(() => vi.fn());
+const runAgentMock = vi.hoisted(() => vi.fn());
+const enqueueJobsMock = vi.hoisted(() => vi.fn());
 
 vi.mock('twenty-client-sdk/core', () => ({
-  CoreApiClient: vi.fn(),
+  CoreApiClient: class {
+    query = queryMock;
+    mutation = mutationMock;
+  },
 }));
 
-vi.mock(
-  'src/logic-functions/data/find-call-recording-ids-missing-summary.util',
-  () => ({
-    findCallRecordingIdsMissingSummary: findCallRecordingIdsMissingSummaryMock,
-  }),
-);
-
-vi.mock(
-  'src/logic-functions/data/find-call-recording-ids-for-calendar-events.util',
-  () => ({
-    findCallRecordingIdsForCalendarEvents:
-      findCallRecordingIdsForCalendarEventsMock,
-  }),
-);
-
-vi.mock(
-  'src/logic-functions/flows/generate-missing-call-recording-summaries.util',
-  () => ({
-    generateMissingCallRecordingSummaries:
-      generateMissingCallRecordingSummariesMock,
-  }),
-);
-
-vi.mock(
-  'src/logic-functions/utils/is-call-recording-summary-enabled.util',
-  () => ({
-    isCallRecordingSummaryEnabled: isCallRecordingSummaryEnabledMock,
-  }),
-);
+vi.mock('twenty-sdk/logic-function', () => ({
+  runAgent: runAgentMock,
+  enqueueJobs: enqueueJobsMock,
+}));
 
 const buildRoutePayload = (
   body: object | null,
@@ -56,69 +34,190 @@ const buildRoutePayload = (
     userWorkspaceId: null,
   }) as never;
 
+const TRANSCRIPT = [
+  {
+    participant: { name: 'Alex' },
+    words: [{ text: 'Hello' }, { text: 'team' }],
+  },
+];
+
+type CallRecordingsQueryShape = {
+  callRecordings: {
+    __args: {
+      filter: {
+        id?: { eq: string };
+        calendarEventId?: { in: string[] };
+      };
+    };
+  };
+};
+
+const buildConnection = (nodes: object[]) => ({
+  callRecordings: {
+    pageInfo: { hasNextPage: false, endCursor: null },
+    edges: nodes.map((node) => ({ node })),
+  },
+});
+
+const buildSummarizableCallRecordingNode = (id: string) => ({
+  id,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  title: 'Weekly sync',
+  transcript: TRANSCRIPT,
+  summary: { markdown: null },
+  createdBy: { source: 'APPLICATION', name: 'Call Recorder' },
+});
+
+const seedCallRecordingQueries = ({
+  calendarEventNodes = [],
+  callRecordingsById = {},
+}: {
+  calendarEventNodes?: object[];
+  callRecordingsById?: Record<string, object>;
+} = {}) => {
+  queryMock.mockImplementation(async (queryShape: unknown) => {
+    const filter = (queryShape as CallRecordingsQueryShape).callRecordings
+      .__args.filter;
+
+    if (filter.id !== undefined) {
+      const node = callRecordingsById[filter.id.eq];
+
+      return {
+        callRecordings: { edges: node === undefined ? [] : [{ node }] },
+      };
+    }
+
+    if (filter.calendarEventId !== undefined) {
+      return buildConnection(calendarEventNodes);
+    }
+
+    return buildConnection([]);
+  });
+};
+
+const queriedCallRecordingFilters = (): unknown[] =>
+  queryMock.mock.calls.map(
+    ([queryShape]) =>
+      (queryShape as CallRecordingsQueryShape).callRecordings.__args.filter,
+  );
+
 const BATCH_RESULT = {
   generatedCallRecordingIds: ['call-recording-1'],
   failedCallRecordingIds: [],
   erroredCallRecordingIds: [],
   skippedCallRecordingIds: [],
-  remainingCallRecordingIds: [],
-  continuationRequested: false,
+  unavailableCallRecordingIds: [],
 };
 
 describe('generateCallRecordingSummariesHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    isCallRecordingSummaryEnabledMock.mockReturnValue(true);
-    findCallRecordingIdsMissingSummaryMock.mockResolvedValue([]);
-    findCallRecordingIdsForCalendarEventsMock.mockResolvedValue([]);
-    generateMissingCallRecordingSummariesMock.mockResolvedValue(BATCH_RESULT);
+    vi.stubEnv('CALL_RECORDER_SUMMARY_ENABLED', 'true');
+    vi.stubEnv('CALL_RECORDER_ADDITIONAL_SUMMARY_PROMPT', '');
+    mutationMock.mockResolvedValue({});
+    runAgentMock.mockResolvedValue({
+      success: true,
+      error: null,
+      result: { response: '## Overview\nGood call.' },
+    });
+    seedCallRecordingQueries();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it('returns disabled without touching data when summaries are off', async () => {
-    isCallRecordingSummaryEnabledMock.mockReturnValue(false);
+    vi.stubEnv('CALL_RECORDER_SUMMARY_ENABLED', 'false');
 
     const result = await generateCallRecordingSummariesHandler(
       buildRoutePayload(null),
     );
 
     expect(result).toEqual({ outcome: 'disabled' });
-    expect(findCallRecordingIdsMissingSummaryMock).not.toHaveBeenCalled();
-    expect(generateMissingCallRecordingSummariesMock).not.toHaveBeenCalled();
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(runAgentMock).not.toHaveBeenCalled();
+    expect(mutationMock).not.toHaveBeenCalled();
+    expect(enqueueJobsMock).not.toHaveBeenCalled();
   });
 
-  it('processes explicit call recording ids without sweeping', async () => {
+  it('processes explicit call recording ids inline without enqueuing', async () => {
+    seedCallRecordingQueries({
+      callRecordingsById: {
+        'call-recording-1':
+          buildSummarizableCallRecordingNode('call-recording-1'),
+      },
+    });
+
     const result = await generateCallRecordingSummariesHandler(
       buildRoutePayload({ callRecordingIds: ['call-recording-1'] }),
     );
 
     expect(result).toEqual({ outcome: 'processed', ...BATCH_RESULT });
-    expect(generateMissingCallRecordingSummariesMock).toHaveBeenCalledWith(
-      expect.objectContaining({ callRecordingIds: ['call-recording-1'] }),
-    );
-    expect(findCallRecordingIdsMissingSummaryMock).not.toHaveBeenCalled();
-    expect(findCallRecordingIdsForCalendarEventsMock).not.toHaveBeenCalled();
+    expect(queriedCallRecordingFilters()).toEqual([
+      { id: { eq: 'call-recording-1' } },
+    ]);
+    expect(enqueueJobsMock).not.toHaveBeenCalled();
+    expect(mutationMock).toHaveBeenCalledWith({
+      updateCallRecording: {
+        __args: {
+          id: 'call-recording-1',
+          data: {
+            summary: { blocknote: null, markdown: '## Overview\nGood call.' },
+          },
+        },
+        id: true,
+      },
+    });
   });
 
   it('resolves calendar event ids to their call recordings', async () => {
-    findCallRecordingIdsForCalendarEventsMock.mockResolvedValue([
-      'call-recording-7',
-    ]);
+    seedCallRecordingQueries({
+      calendarEventNodes: [{ id: 'call-recording-7' }],
+      callRecordingsById: {
+        'call-recording-7':
+          buildSummarizableCallRecordingNode('call-recording-7'),
+      },
+    });
 
     await generateCallRecordingSummariesHandler(
       buildRoutePayload({ calendarEventIds: ['calendar-event-1'] }),
     );
 
-    expect(findCallRecordingIdsForCalendarEventsMock).toHaveBeenCalledWith(
-      expect.anything(),
-      { calendarEventIds: ['calendar-event-1'] },
+    expect(queriedCallRecordingFilters()).toEqual([
+      { calendarEventId: { in: ['calendar-event-1'] } },
+      { id: { eq: 'call-recording-7' } },
+    ]);
+    expect(mutationMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        updateCallRecording: expect.objectContaining({
+          __args: expect.objectContaining({ id: 'call-recording-7' }),
+        }),
+      }),
     );
-    expect(generateMissingCallRecordingSummariesMock).toHaveBeenCalledWith(
-      expect.objectContaining({ callRecordingIds: ['call-recording-7'] }),
-    );
-    expect(findCallRecordingIdsMissingSummaryMock).not.toHaveBeenCalled();
   });
 
-  it('reports when the selected calendar events have no recordings instead of sweeping', async () => {
+  it('regenerates an existing summary when requested from a calendar event', async () => {
+    seedCallRecordingQueries({
+      calendarEventNodes: [{ id: 'call-recording-1' }],
+      callRecordingsById: {
+        'call-recording-1': {
+          ...buildSummarizableCallRecordingNode('call-recording-1'),
+          summary: { markdown: '## Overview\nOld summary.' },
+        },
+      },
+    });
+
+    const result = await generateCallRecordingSummariesHandler(
+      buildRoutePayload({ calendarEventIds: ['calendar-event-1'] }),
+    );
+
+    expect(result).toEqual({ outcome: 'processed', ...BATCH_RESULT });
+    expect(runAgentMock).toHaveBeenCalledTimes(1);
+    expect(mutationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports when the selected calendar events have no recordings instead of enqueuing', async () => {
     const result = await generateCallRecordingSummariesHandler(
       buildRoutePayload({ calendarEventIds: ['calendar-event-1'] }),
     );
@@ -126,48 +225,46 @@ describe('generateCallRecordingSummariesHandler', () => {
     expect(result).toEqual({
       outcome: 'no-call-recordings-for-calendar-events',
     });
-    expect(findCallRecordingIdsMissingSummaryMock).not.toHaveBeenCalled();
-    expect(generateMissingCallRecordingSummariesMock).not.toHaveBeenCalled();
+    expect(queriedCallRecordingFilters()).toEqual([
+      { calendarEventId: { in: ['calendar-event-1'] } },
+    ]);
+    expect(runAgentMock).not.toHaveBeenCalled();
+    expect(mutationMock).not.toHaveBeenCalled();
+    expect(enqueueJobsMock).not.toHaveBeenCalled();
   });
 
-  it('sweeps recordings missing a summary when no ids are given', async () => {
-    findCallRecordingIdsMissingSummaryMock.mockResolvedValue([
-      'call-recording-1',
-      'call-recording-2',
-    ]);
-
+  it('returns nothing-selected when no ids are given instead of sweeping history', async () => {
     const result = await generateCallRecordingSummariesHandler(
       buildRoutePayload(null),
     );
 
-    expect(findCallRecordingIdsMissingSummaryMock).toHaveBeenCalledWith(
-      expect.anything(),
-    );
-    expect(generateMissingCallRecordingSummariesMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        callRecordingIds: ['call-recording-1', 'call-recording-2'],
-      }),
-    );
-    expect(result).toEqual({ outcome: 'processed', ...BATCH_RESULT });
+    expect(result).toEqual({ outcome: 'nothing-selected' });
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(runAgentMock).not.toHaveBeenCalled();
+    expect(mutationMock).not.toHaveBeenCalled();
+    expect(enqueueJobsMock).not.toHaveBeenCalled();
   });
 
-  it('does not sweep when an empty calendar event selection is sent', async () => {
+  it('does not enqueue when an empty calendar event selection is sent', async () => {
     const result = await generateCallRecordingSummariesHandler(
       buildRoutePayload({ calendarEventIds: [] }),
     );
 
     expect(result).toEqual({ outcome: 'nothing-selected' });
-    expect(findCallRecordingIdsMissingSummaryMock).not.toHaveBeenCalled();
-    expect(findCallRecordingIdsForCalendarEventsMock).not.toHaveBeenCalled();
-    expect(generateMissingCallRecordingSummariesMock).not.toHaveBeenCalled();
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(runAgentMock).not.toHaveBeenCalled();
+    expect(mutationMock).not.toHaveBeenCalled();
+    expect(enqueueJobsMock).not.toHaveBeenCalled();
   });
 
-  it('short-circuits an empty sweep without running the batch', async () => {
+  it('returns nothing-selected for an empty body', async () => {
     const result = await generateCallRecordingSummariesHandler(
       buildRoutePayload({}),
     );
 
-    expect(result).toEqual({ outcome: 'nothing-to-summarize' });
-    expect(generateMissingCallRecordingSummariesMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ outcome: 'nothing-selected' });
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(runAgentMock).not.toHaveBeenCalled();
+    expect(enqueueJobsMock).not.toHaveBeenCalled();
   });
 });
