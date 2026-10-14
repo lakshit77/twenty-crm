@@ -127,6 +127,17 @@ docker compose -f docker-compose.prod.standalone.yml up -d
 
 After changing `.env`, always run `up -d` again so containers pick up new values.
 
+### Custom env vars for workflow code nodes
+
+Code nodes run with `LOGIC_FUNCTION_TYPE=LOCAL` inside the `server` (editor "Test" button) and `worker` (real runs, cron) containers and inherit their `process.env`. Any variable listed under `environment:` for both services in `docker-compose.prod.standalone.yml` is readable as `process.env.NAME` in a code node.
+
+- Change a value: edit it in `~/twenty-crm/.env`, then `up -d`.
+- Add a new variable: add `NAME: ${NAME:-}` to both `server` and `worker` in the compose file, add `NAME=value` to `.env`, then `up -d`.
+- Values containing `|`, `#` or spaces must be single-quoted in `.env`, e.g. `CHATSYNCS_BOTSAILOR_API_KEY='123|abc'`.
+- Do not reuse names Twenty injects into every run, they override container values: `TWENTY_API_KEY`, `TWENTY_API_URL`, `TWENTY_APP_ACCESS_TOKEN`, `TWENTY_APP_APPLICATION_ACCESS_TOKEN`, `TWENTY_FUNCTIONS_URL`, `APPLICATION_ID`. That is why the workspace API key is stored as `TWENTY_CRM_API_KEY`.
+
+Note: LOCAL runs code unsandboxed, so code nodes can also read every other variable in those containers (DB URL, encryption key). Only let trusted users edit workflows.
+
 ### HTTPS / certificate issues
 
 Traefik runs as `twenty-crm-traefik-1` in the same compose stack:
