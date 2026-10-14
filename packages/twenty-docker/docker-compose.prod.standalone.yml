@@ -6,7 +6,7 @@ name: twenty-crm
 
 services:
   traefik:
-    image: traefik
+    image: traefik:v3
     restart: always
     command:
       - '--api=true'
@@ -62,6 +62,10 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY}
       APP_SECRET: ${APP_SECRET:-}
+
+      LOGIC_FUNCTION_TYPE: ${LOGIC_FUNCTION_TYPE:-LOCAL}
+      CHATSYNCS_BOTSAILOR_API_KEY: ${CHATSYNCS_BOTSAILOR_API_KEY:-}
+      TWENTY_CRM_API_KEY: ${TWENTY_CRM_API_KEY:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -98,15 +102,21 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY}
       APP_SECRET: ${APP_SECRET:-}
+
+      LOGIC_FUNCTION_TYPE: ${LOGIC_FUNCTION_TYPE:-LOCAL}
+      CHATSYNCS_BOTSAILOR_API_KEY: ${CHATSYNCS_BOTSAILOR_API_KEY:-}
+      TWENTY_CRM_API_KEY: ${TWENTY_CRM_API_KEY:-}
     depends_on:
       server:
         condition: service_healthy
     restart: always
 
   redis:
-    image: redis
+    image: redis:8
     restart: always
     command: ['--maxmemory-policy', 'noeviction']
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -116,3 +126,4 @@ services:
 volumes:
   traefik_data:
   server-local-data:
+  redis-data:
